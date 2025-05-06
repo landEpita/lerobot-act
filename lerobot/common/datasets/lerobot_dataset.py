@@ -767,6 +767,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # size and task are special cases that are not in self.features
         ep_buffer["size"] = 0
         ep_buffer["task"] = []
+        ep_buffer["onehot_task"] = []
         for key in self.features:
             ep_buffer[key] = current_ep_idx if key == "episode_index" else []
         return ep_buffer

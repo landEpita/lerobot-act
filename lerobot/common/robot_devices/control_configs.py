@@ -51,6 +51,7 @@ class RecordControlConfig(ControlConfig):
     repo_id: str
     # A short but accurate description of the task performed during the recording (e.g. "Pick the Lego block and drop it in the box on the right.")
     single_task: str
+    multi_task: bool = False
     # Root directory where the dataset will be stored (e.g. 'dataset/path').
     root: str | Path | None = None
     policy: PreTrainedConfig | None = None

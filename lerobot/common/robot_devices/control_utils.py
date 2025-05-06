@@ -196,6 +196,8 @@ def record_episode(
     policy,
     fps,
     single_task,
+    multitask,
+    current_task=None,
 ):
     control_loop(
         robot=robot,
@@ -207,6 +209,8 @@ def record_episode(
         fps=fps,
         teleoperate=policy is None,
         single_task=single_task,
+        multitask=multitask,
+        current_task=current_task,
     )
 
 
@@ -221,6 +225,8 @@ def control_loop(
     policy: PreTrainedPolicy = None,
     fps: int | None = None,
     single_task: str | None = None,
+    multitask: bool = False,
+    current_task: list[int] | None = None,
 ):
     # TODO(rcadene): Add option to record logs
     if not robot.is_connected:
@@ -248,6 +254,9 @@ def control_loop(
 
         if teleoperate:
             observation, action = robot.teleop_step(record_data=True)
+            if multitask and current_task is not None:
+                observation["onehot_task"] = current_task
+
         else:
             observation = robot.capture_observation()
 
