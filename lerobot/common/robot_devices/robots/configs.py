@@ -686,7 +686,7 @@ class MonRobot7AxesConfig(ManipulatorRobotConfig):
         default_factory=lambda: {
             "rail_lineaire": ModbusRTUMotorsBusConfig( # Votre axe NEMA17
                 port="/dev/tty.usbserial-BG00Q7CQ", # Adaptez
-                motors={"axe_translation": (201, "NEMA17_MKS42D")}, # Nom du moteur et son ID Modbus
+                motors={"axe_translation": (1, "NEMA17_MKS42D")}, # Nom du moteur et son ID Modbus
                 baudrate=115200,
             ),
             # "main": FeetechMotorsBusConfig(

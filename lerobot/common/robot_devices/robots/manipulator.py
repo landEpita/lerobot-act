@@ -507,6 +507,11 @@ class ManipulatorRobot:
         # Send goal position to the follower
         follower_goal_pos = {}
         for name in self.follower_arms:
+
+            if name == self.rail_follower_arm_name:
+                follower_goal_pos[name] = torch.from_numpy(self.follower_arms[name].read("Present_Position"))
+                continue
+
             before_fwrite_t = time.perf_counter()
             goal_pos = leader_pos[name]
 
@@ -536,6 +541,8 @@ class ManipulatorRobot:
             follower_pos[name] = self.follower_arms[name].read("Present_Position")
             follower_pos[name] = torch.from_numpy(follower_pos[name])
             self.logs[f"read_follower_{name}_pos_dt_s"] = time.perf_counter() - before_fread_t
+        
+        print(f"follower_pos: {follower_pos}")
 
         # Create state by concatenating follower current position
         state = []
@@ -543,6 +550,8 @@ class ManipulatorRobot:
             if name in follower_pos:
                 state.append(follower_pos[name])
         state = torch.cat(state)
+        
+        print(f"state: {state}")
 
         # Create action by concatenating follower goal position
         action = []
@@ -550,6 +559,8 @@ class ManipulatorRobot:
             if name in follower_goal_pos:
                 action.append(follower_goal_pos[name])
         action = torch.cat(action)
+
+        print(f"action: {action}")
 
         # Capture images from cameras
         images = {}
