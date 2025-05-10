@@ -17,6 +17,7 @@ from typing import Protocol
 from lerobot.common.robot_devices.motors.configs import (
     DynamixelMotorsBusConfig,
     FeetechMotorsBusConfig,
+    ModbusRTUMotorsBusConfig,
     MotorsBusConfig,
 )
 
@@ -43,6 +44,11 @@ def make_motors_buses_from_configs(motors_bus_configs: dict[str, MotorsBusConfig
             from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus
 
             motors_buses[key] = FeetechMotorsBus(cfg)
+        
+        elif cfg.type == "modbus_rtu": # Ajoutez cette section
+            from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
+            
+            motors_buses[key] = ModbusRTUMotorsBus(cfg)
 
         else:
             raise ValueError(f"The motor type '{cfg.type}' is not valid.")
@@ -62,6 +68,12 @@ def make_motors_bus(motor_type: str, **kwargs) -> MotorsBus:
 
         config = FeetechMotorsBusConfig(**kwargs)
         return FeetechMotorsBus(config)
+    
+    elif motor_type == "modbus_rtu": # Ajoutez cette section
+        from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
+        
+        config = ModbusRTUMotorsBusConfig(**kwargs)
+        return ModbusRTUMotorsBus(config)
 
     else:
         raise ValueError(f"The motor type '{motor_type}' is not valid.")

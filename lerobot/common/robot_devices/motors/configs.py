@@ -39,3 +39,15 @@ class FeetechMotorsBusConfig(MotorsBusConfig):
     port: str
     motors: dict[str, tuple[int, str]]
     mock: bool = False
+
+@MotorsBusConfig.register_subclass("modbus_rtu")
+@dataclass
+class ModbusRTUMotorsBusConfig(MotorsBusConfig):
+    port: str  # Ex: /dev/ttyUSB1 pour votre adaptateur USB-RS485
+    motors: dict[str, tuple[int, str]] # Ex: {"rail_joint": (201, "NEMA17_MKS42D")} (ID esclave Modbus, nom du modèle)
+    baudrate: int = 115200
+    stopbits: int = 1
+    parity: str = 'N' # 'N' for None, 'E' for Even, 'O' for Odd
+    bytesize: int = 8
+    timeout: float = 0.1 # Timeout en secondes pour les opérations Modbus
+    mock: bool = False

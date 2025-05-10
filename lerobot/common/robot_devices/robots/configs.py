@@ -26,6 +26,7 @@ from lerobot.common.robot_devices.cameras.configs import (
 from lerobot.common.robot_devices.motors.configs import (
     DynamixelMotorsBusConfig,
     FeetechMotorsBusConfig,
+    ModbusRTUMotorsBusConfig,
     MotorsBusConfig,
 )
 
@@ -674,3 +675,62 @@ class LeKiwiRobotConfig(RobotConfig):
     )
 
     mock: bool = False
+
+
+@RobotConfig.register_subclass("so100b") # Donnez un nom unique
+@dataclass
+class MonRobot7AxesConfig(ManipulatorRobotConfig):
+    calibration_dir: str = ".cache/calibration/mon_robot_7_axes" # Adaptez le chemin
+
+    follower_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "rail_lineaire": ModbusRTUMotorsBusConfig( # Votre axe NEMA17
+                port="/dev/tty.usbserial-BG00Q7CQ", # Adaptez
+                motors={"axe_translation": (201, "NEMA17_MKS42D")}, # Nom du moteur et son ID Modbus
+                baudrate=115200,
+            ),
+            # "main": FeetechMotorsBusConfig(
+            #     port="/dev/tty.usbmodem58760431091",
+            #     motors={
+            #         # name: (index, model)
+            #         "shoulder_pan": [1, "sts3215"],
+            #         "shoulder_lift": [2, "sts3215"],
+            #         "elbow_flex": [3, "sts3215"],
+            #         "wrist_flex": [4, "sts3215"],
+            #         "wrist_roll": [5, "sts3215"],
+            #         "gripper": [6, "sts3215"],
+            #     },
+            # ),
+        }
+    )
+    # Si vous avez un bras leader pour les 6 axes Feetech
+    leader_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+        }
+    )
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+        }
+    )
+
+# @dataclass
+# class VotreRobotConfig(ManipulatorRobotConfig): # Ou modifiez une existante
+#     # ...
+#     follower_arms: dict[str, MotorsBusConfig] = field(
+#         default_factory=lambda: {
+#             "arm_6_axes": FeetechMotorsBusConfig( # Votre bras existant
+#                 port="/dev/ttyUSB0", # Exemple
+#                 motors={ # Vos 6 servos Feetech
+#                     "joint1": (1, "STS3215"),
+#                     # ...
+#                     "joint6": (6, "STS3215"),
+#                 }
+#             ),
+#             "linear_rail": ModbusRTUMotorsBusConfig( # Votre nouvel axe
+#                 port="/dev/ttyUSB1", # Port de votre adaptateur USB-RS485
+#                 motors={"rail_joint": (201, "NEMA17_MKS42D")}, # (ID Modbus, "modèle")
+#                 baudrate=115200, # Assurez-vous que ça correspond à votre MKS
+#                 # ... autres params Modbus ...
+#             ),
+#         }
+#     )
