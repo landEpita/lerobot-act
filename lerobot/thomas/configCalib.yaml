@@ -1,0 +1,7 @@
+robot:
+  type: so100
+
+control:
+  type: calibrate
+  arms:
+    - main_follower

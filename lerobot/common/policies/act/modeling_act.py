@@ -307,7 +307,12 @@ class ACT(nn.Module):
         self.use_onehot = config.use_onehot
 
         if self.use_onehot:
-            self.encoder_onehot_action_proj = nn.Linear(config.onehot_action_dim, config.dim_model)
+            self.encoder_onehot_action_proj = nn.Sequential(
+                nn.Linear(config.onehot_action_dim, config.dim_model*2),
+                nn.ReLU(),
+                nn.Linear(config.dim_model*2, config.dim_model)
+            )
+
 
         if self.config.use_vae:
             self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)

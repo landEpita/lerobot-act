@@ -1,0 +1,16 @@
+robot:
+  type: so100b
+
+control:
+  type: record
+  single_task: "Grasp a lego block and put it in the bin."
+  fps: 30
+  repo_id: tgossin/nema17
+  tags:
+    - tutorial
+  warmup_time_s: 5
+  episode_time_s: 5
+  reset_time_s: 5
+  num_episodes: 3
+  push_to_hub: false
+  display_data: true

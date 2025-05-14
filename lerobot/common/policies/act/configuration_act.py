@@ -95,7 +95,7 @@ class ACTConfig(PreTrainedConfig):
     chunk_size: int = 100
     n_action_steps: int = 100
     use_onehot: bool = True
-    onehot_action_dim: int | None = None
+    onehot_action_dim: int | None = 3
 
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {

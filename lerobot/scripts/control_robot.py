@@ -176,7 +176,7 @@ import torch
 # Control modes
 ########################################################################################
 
-NUMBER_OF_TASKS = 4 # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
+NUMBER_OF_TASKS = 3 # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
 
 @safe_disconnect
 def calibrate(robot: Robot, cfg: CalibrateControlConfig):

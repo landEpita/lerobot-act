@@ -1,0 +1,17 @@
+robot:
+  type: so100
+
+control:
+  type: record
+  fps: 30 
+  single_task: "Grasp a lego block and put it in the bin." 
+  multi_task: true
+  repo_id: tgossin/so100_dataset_multitask 
+  tags:
+    - tutorial
+  warmup_time_s: 5
+  episode_time_s: 60 
+  reset_time_s: 10 
+  num_episodes: 50 
+  push_to_hub: false
+  display_data: true

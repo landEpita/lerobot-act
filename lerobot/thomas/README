@@ -1,0 +1,11 @@
+python lerobot/scripts/control_robot.py --config_path .\lerobot\config.yaml
+ 
+python lerobot/scripts/control_robot.py --robot.type=so100 --robot.cameras='{}' --control.type=teleoperate
+ 
+python lerobot/scripts/configure_motor.py --port COM10 --brand feetech --model sts3215 --baudrate 1000000 --ID 2
+
+C:\\Users\\tgossin\\.cache\\huggingface\\lerobot\\tgossin\\local_test_recording'
+
+
+- camera embarquée doit voir l'objectif avant de commencer
+- mettre un sol noir pour contraster le fond

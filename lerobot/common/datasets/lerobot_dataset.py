@@ -796,7 +796,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         for name in frame:
             if isinstance(frame[name], torch.Tensor):
                 frame[name] = frame[name].numpy()
-
+        
         validate_frame(frame, self.features)
 
         if self.episode_buffer is None:
