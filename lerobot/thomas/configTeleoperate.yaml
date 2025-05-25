@@ -1,9 +1,9 @@
 robot:
-  type: so100b 
-  cameras: {}
+  type: so100
 
 control:
   type: teleoperate
+  display_data: true
 
 
 

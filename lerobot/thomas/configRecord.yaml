@@ -4,14 +4,16 @@ robot:
 control:
   type: record
   fps: 30 
-  single_task: "Grasp a lego block and put it in the bin." 
+  single_task: "make a burger" 
   multi_task: true
-  repo_id: tgossin/so100_dataset_multitask 
+  task_index: 1
+  repo_id: tgossin/burger 
   tags:
     - tutorial
   warmup_time_s: 5
   episode_time_s: 60 
   reset_time_s: 10 
-  num_episodes: 50 
+  num_episodes: 20
   push_to_hub: false
   display_data: true
+  resume: true

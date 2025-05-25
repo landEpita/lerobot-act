@@ -46,8 +46,6 @@ import torch
 # Control modes
 ########################################################################################
 
-NUM_COLS = 8
-NUM_ROWS = 3
 @safe_disconnect
 def teleoperate(robot: Robot, cfg: TeleoperateControlConfig):
     control_loop(
@@ -185,7 +183,7 @@ def control_robot(
                 )
             },
             cameras={
-                'webcam': OpenCVCameraConfig(
+                'camD': OpenCVCameraConfig(
                     camera_index=0,
                     fps=30,
                     width=640,
@@ -195,7 +193,7 @@ def control_robot(
                     rotation=None,
                     mock=False
                 ),
-                'camD': OpenCVCameraConfig(
+                'webcam': OpenCVCameraConfig(
                     camera_index=1,
                     fps=30,
                     width=640,
@@ -213,7 +211,7 @@ def control_robot(
         ), 
         control=RecordControlConfig(
             repo_id='tgossin/eval_so100_dataset_multitask',
-            single_task='Grasp a lego block and put it in the bin.',
+            single_task='make a burger',
             multi_task=True,
             root=None,
             policy=ACTConfig(
@@ -235,7 +233,7 @@ def control_robot(
                 chunk_size=100,
                 n_action_steps=100,
                 use_onehot=True,
-                onehot_action_dim=3,
+                onehot_action_dim=2,
                 vision_backbone='resnet18',
                 pretrained_backbone_weights='ResNet18_Weights.IMAGENET1K_V1',
                 replace_final_stride_with_dilation=0,
@@ -259,7 +257,7 @@ def control_robot(
             ),
             fps=30,
             warmup_time_s=5,
-            episode_time_s=12,
+            episode_time_s=50,
             reset_time_s=8,
             num_episodes=1,
             video=True,
@@ -282,4 +280,4 @@ def control_robot(
 
 if __name__ == "__main__":
     index = 0
-    control_robot(onehot_task=[0,1,0], index=index)
+    control_robot(onehot_task=[0,1], index=index)

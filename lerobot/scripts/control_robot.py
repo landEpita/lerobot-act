@@ -176,7 +176,7 @@ import torch
 # Control modes
 ########################################################################################
 
-NUMBER_OF_TASKS = 3 # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
+NUMBER_OF_TASKS = 2 # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
 
 @safe_disconnect
 def calibrate(robot: Robot, cfg: CalibrateControlConfig):
@@ -293,16 +293,14 @@ def record(
         robot.teleop_safety_stop()
 
     recorded_episodes = 0
+    current_task = None
+    if cfg.multi_task:
+        one_hot_vector = [0] * NUMBER_OF_TASKS
+        one_hot_vector[cfg.task_index] = 1
+        current_task = torch.tensor(one_hot_vector)
     while True:
         if recorded_episodes >= cfg.num_episodes:
             break
-
-        current_task = None
-        if cfg.multi_task:
-            one_hot_vector = [0] * NUMBER_OF_TASKS
-            current_col = recorded_episodes % NUMBER_OF_TASKS
-            one_hot_vector[current_col] = 1
-            current_task = torch.tensor(one_hot_vector)
 
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
         record_episode(
