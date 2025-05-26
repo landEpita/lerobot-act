@@ -304,15 +304,6 @@ class ACT(nn.Module):
         # The cls token forms parameters of the latent's distribution (like this [*means, *log_variances]).
         super().__init__()
         self.config = config
-        self.use_onehot = config.use_onehot
-
-        if self.use_onehot:
-            self.encoder_onehot_action_proj = nn.Sequential(
-                nn.Linear(config.onehot_action_dim, config.dim_model*2),
-                nn.ReLU(),
-                nn.Linear(config.dim_model*2, config.dim_model)
-            )
-
 
         if self.config.use_vae:
             self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)
@@ -376,8 +367,6 @@ class ACT(nn.Module):
             n_1d_tokens += 1
         if self.config.env_state_feature:
             n_1d_tokens += 1
-        if self.use_onehot:
-            n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
         if self.config.image_features:
             self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.dim_model // 2)
@@ -403,8 +392,6 @@ class ACT(nn.Module):
         `batch` should have the following structure:
         {
             [robot_state_feature] (optional): (B, state_dim) batch of robot states.
-
-            [onehot_action_feature] (optional): (B, onehot_action_dim) batch of one-hot actions.
 
             [image_features]: (B, n_cameras, C, H, W) batch of images.
                 AND/OR
@@ -493,12 +480,6 @@ class ACT(nn.Module):
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["observation.environment_state"])
             )
-        # One-hot action token.
-        if self.use_onehot:
-            onehot_task = batch["onehot_task"].to(torch.float32)
-            onehot_encoder = self.encoder_onehot_action_proj(onehot_task)
-            encoder_in_tokens.append(onehot_encoder)
-            
 
         # Camera observation features and positional embeddings.
         if self.config.image_features:

@@ -1,0 +1,20 @@
+policy:
+  type: act
+  device: cuda
+  input_features:
+    observation.state:
+      shape: [8]
+      type: STATE
+  output_features:
+    action:
+      shape: [14]
+      type: ACTION
+
+dataset:
+  repo_id: /content/drive/MyDrive/lerobot/dataset/nema17
+
+wandb:
+  enable : false
+
+output_dir: content/drive/MyDrive/lerobot/outputs/train/act_so100_mks
+job_name: act_so100_test

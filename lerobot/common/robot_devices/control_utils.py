@@ -196,8 +196,6 @@ def record_episode(
     policy,
     fps,
     single_task,
-    multitask,
-    current_task=None,
 ):
     control_loop(
         robot=robot,
@@ -209,8 +207,6 @@ def record_episode(
         fps=fps,
         teleoperate=policy is None,
         single_task=single_task,
-        multitask=multitask,
-        current_task=current_task,
     )
 
 
@@ -225,8 +221,6 @@ def control_loop(
     policy: PreTrainedPolicy = None,
     fps: int | None = None,
     single_task: str | None = None,
-    multitask: bool = False,
-    current_task: list[int] | None = None,
 ):
     # TODO(rcadene): Add option to record logs
     if not robot.is_connected:
@@ -254,11 +248,9 @@ def control_loop(
 
         if teleoperate:
             observation, action = robot.teleop_step(record_data=True)
-            if multitask and current_task is not None:
-                observation["onehot_task"] = current_task
-
         else:
             observation = robot.capture_observation()
+            action = None
 
             if policy is not None:
                 pred_action = predict_action(
@@ -271,13 +263,15 @@ def control_loop(
 
         if dataset is not None:
             frame = {**observation, **action, "task": single_task}
+            print(f"Recording frame {frame}")
             dataset.add_frame(frame)
 
         # TODO(Steven): This should be more general (for RemoteRobot instead of checking the name, but anyways it will change soon)
         if (display_data and not is_headless()) or (display_data and robot.robot_type.startswith("lekiwi")):
-            for k, v in action.items():
-                for i, vv in enumerate(v):
-                    rr.log(f"sent_{k}_{i}", rr.Scalar(vv.numpy()))
+            if action is not None:
+                for k, v in action.items():
+                    for i, vv in enumerate(v):
+                        rr.log(f"sent_{k}_{i}", rr.Scalar(vv.numpy()))
 
             image_keys = [key for key in observation if "image" in key]
             for key in image_keys:

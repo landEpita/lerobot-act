@@ -1,6 +1,6 @@
 import cv2
 
-index = 2  # change ce chiffre entre 0 et 5 selon ce que tu trouves
+index = 1  # change ce chiffre entre 0 et 5 selon ce que tu trouves
 
 cap = cv2.VideoCapture(index)
 

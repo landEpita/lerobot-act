@@ -652,6 +652,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def features(self) -> dict[str, dict]:
+        print(f"self.meta.features: {self.meta.features}")
         return self.meta.features
 
     @property
@@ -767,7 +768,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # size and task are special cases that are not in self.features
         ep_buffer["size"] = 0
         ep_buffer["task"] = []
-        ep_buffer["onehot_task"] = []
         for key in self.features:
             ep_buffer[key] = current_ep_idx if key == "episode_index" else []
         return ep_buffer
@@ -796,7 +796,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         for name in frame:
             if isinstance(frame[name], torch.Tensor):
                 frame[name] = frame[name].numpy()
-        
+
         validate_frame(frame, self.features)
 
         if self.episode_buffer is None:

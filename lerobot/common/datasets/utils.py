@@ -72,7 +72,6 @@ DEFAULT_FEATURES = {
     "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
     "index": {"dtype": "int64", "shape": (1,), "names": None},
     "task_index": {"dtype": "int64", "shape": (1,), "names": None},
-    "onehot_task": {"dtype": "int64", "shape": (3,), "names": None},
 }
 
 
@@ -701,7 +700,7 @@ class IterableNamespace(SimpleNamespace):
 
 def validate_frame(frame: dict, features: dict):
     optional_features = {"timestamp"}
-    expected_features = (set(features) - set(DEFAULT_FEATURES.keys())) | {"task", "onehot_task"}
+    expected_features = (set(features) - set(DEFAULT_FEATURES.keys())) | {"task"}
     actual_features = set(frame.keys())
 
     error_message = validate_features_presence(actual_features, expected_features, optional_features)
@@ -710,7 +709,7 @@ def validate_frame(frame: dict, features: dict):
         error_message += validate_feature_string("task", frame["task"])
 
     common_features = actual_features & (expected_features | optional_features)
-    for name in common_features - {"task", "onehot_task"}:
+    for name in common_features - {"task"}:
         error_message += validate_feature_dtype_and_shape(name, features[name], frame[name])
 
     if error_message:

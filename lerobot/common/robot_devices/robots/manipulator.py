@@ -28,18 +28,36 @@ import numpy as np
 import torch
 
 from lerobot.common.robot_devices.cameras.utils import make_cameras_from_configs
+from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
 from lerobot.common.robot_devices.motors.utils import MotorsBus, make_motors_buses_from_configs
 from lerobot.common.robot_devices.robots.configs import ManipulatorRobotConfig
+from lerobot.common.robot_devices.robots.modbus_calibration import run_modbus_rail_calibration
 from lerobot.common.robot_devices.robots.utils import get_arm_id
 from lerobot.common.robot_devices.utils import RobotDeviceAlreadyConnectedError, RobotDeviceNotConnectedError
 
 
 def ensure_safe_goal_position(
-    goal_pos: torch.Tensor, present_pos: torch.Tensor, max_relative_target: float | list[float]
+    goal_pos: torch.Tensor, present_pos: torch.Tensor, max_relative_target: float | list[float] | None # MODIFIED: Added | None
 ):
+    if max_relative_target is None:
+        return goal_pos
+        
     # Cap relative action target magnitude for safety.
     diff = goal_pos - present_pos
-    max_relative_target = torch.tensor(max_relative_target)
+    
+    # MODIFIED: Ensure max_relative_target is a tensor and handle scalar expansion
+    if not isinstance(max_relative_target, torch.Tensor):
+        max_relative_target = torch.tensor(max_relative_target, device=goal_pos.device, dtype=goal_pos.dtype)
+    
+    if max_relative_target.ndim == 0: # If scalar
+        max_relative_target = max_relative_target.expand_as(diff)
+    elif max_relative_target.shape != diff.shape:
+        # This case implies max_relative_target might be a sub-part of a global list,
+        # or a specific list for this arm that matches diff.shape.
+        # The calling function should ensure correct dimensions.
+        logging.warning(f"Shape mismatch for max_relative_target ({max_relative_target.shape}) and goal_pos diff ({diff.shape}). Ensure correct configuration.")
+
+    
     safe_diff = torch.minimum(diff, max_relative_target)
     safe_diff = torch.maximum(safe_diff, -max_relative_target)
     safe_goal_pos = present_pos + safe_diff
@@ -167,6 +185,14 @@ class ManipulatorRobot:
         self.is_connected = False
         self.logs = {}
 
+        self.rail_follower_arm_name = getattr(config, "rail_follower_arm_name", "rail_lineaire")
+        self.rail_motor_name = getattr(config, "rail_motor_name", "axe_translation") # Name of the motor *within* the rail_follower_arm_name bus
+        self.rail_teleop_displacement_mm = getattr(config, "rail_teleop_displacement_mm", 5.0)
+        self._last_rail_target_pos_mm = None # Will be initialized in connect() after calibration
+        print(f"follower: {self.follower_arms}")
+        print(f"name follower: {self.get_motor_names(self.follower_arms)}")
+
+
     def get_motor_names(self, arm: dict[str, MotorsBus]) -> list:
         return [f"{arm}_{motor}" for arm, bus in arm.items() for motor in bus.motors]
 
@@ -184,8 +210,8 @@ class ManipulatorRobot:
 
     @property
     def motor_features(self) -> dict:
-        action_names = self.get_motor_names(self.leader_arms)
-        state_names = self.get_motor_names(self.leader_arms)
+        action_names = self.get_motor_names(self.follower_arms) # TODO(tgossin): a faire une pull request car c'est pas logique que ca soit
+        state_names = self.get_motor_names(self.follower_arms)
         return {
             "action": {
                 "dtype": "float32",
@@ -243,7 +269,7 @@ class ManipulatorRobot:
 
         if self.robot_type in ["koch", "koch_bimanual", "aloha"]:
             from lerobot.common.robot_devices.motors.dynamixel import TorqueMode
-        elif self.robot_type in ["so100", "so101", "moss", "lekiwi"]:
+        elif self.robot_type in ["so100", "so100b", "so101", "moss", "lekiwi"]:
             from lerobot.common.robot_devices.motors.feetech import TorqueMode
 
         # We assume that at connection time, arms are in a rest position, and torque can
@@ -262,11 +288,22 @@ class ManipulatorRobot:
             self.set_aloha_robot_preset()
         elif self.robot_type in ["so100", "so101", "moss", "lekiwi"]:
             self.set_so100_robot_preset()
+        elif self.robot_type == "so100b":
+            self.set_so100b_robot_preset()
 
         # Enable torque on all motors of the follower arms
+        # for name, bus in self.follower_arms.items():
+        #     if bus.config.type == "feetech":
+        #         print(f"Activating torque on {name} follower arm.")
+        #         self.follower_arms[name].write("Torque_Enable", 1)
+
+
+
         for name in self.follower_arms:
             print(f"Activating torque on {name} follower arm.")
-            self.follower_arms[name].write("Torque_Enable", 1)
+            
+            if not isinstance(self.follower_arms[name], ModbusRTUMotorsBus):
+                self.follower_arms[name].write("Torque_Enable", 1)
 
         if self.config.gripper_open_degree is not None:
             if self.robot_type not in ["koch", "koch_bimanual"]:
@@ -300,6 +337,7 @@ class ManipulatorRobot:
         def load_or_run_calibration_(name, arm, arm_type):
             arm_id = get_arm_id(name, arm_type)
             arm_calib_path = self.calibration_dir / f"{arm_id}.json"
+            print(f"Loading calibration file '{arm_calib_path}'")
 
             if arm_calib_path.exists():
                 with open(arm_calib_path) as f:
@@ -307,18 +345,28 @@ class ManipulatorRobot:
             else:
                 # TODO(rcadene): display a warning in __init__ if calibration file not available
                 print(f"Missing calibration file '{arm_calib_path}'")
+                calibration = {}
 
                 if self.robot_type in ["koch", "koch_bimanual", "aloha"]:
                     from lerobot.common.robot_devices.robots.dynamixel_calibration import run_arm_calibration
 
                     calibration = run_arm_calibration(arm, self.robot_type, name, arm_type)
 
-                elif self.robot_type in ["so100", "so101", "moss", "lekiwi"]:
+                elif self.robot_type in ["so100", "so100b" ,"so101", "moss", "lekiwi"]:
                     from lerobot.common.robot_devices.robots.feetech_calibration import (
-                        run_arm_manual_calibration,
+                        run_arm_manual_calibration, 
                     )
-
-                    calibration = run_arm_manual_calibration(arm, self.robot_type, name, arm_type)
+                    # TODO(rcadene): add a calibration procedure for the SO100b
+                    print(f"arm: {arm}, name: {name}, arm_type: {arm_type}")
+                    if not isinstance(arm, ModbusRTUMotorsBus):
+                        calibration = run_arm_manual_calibration(arm, self.robot_type, name, arm_type)
+                    if self.robot_type == "so100b":
+                        if isinstance(arm, ModbusRTUMotorsBus):
+                            rail_calib = run_modbus_rail_calibration(
+                                arm,
+                                name
+                            )
+                            calibration["rail_lineaire"] = rail_calib
 
                 print(f"Calibration is done! Saving calibration file '{arm_calib_path}'")
                 arm_calib_path.parent.mkdir(parents=True, exist_ok=True)
@@ -328,11 +376,11 @@ class ManipulatorRobot:
             return calibration
 
         for name, arm in self.follower_arms.items():
-            calibration = load_or_run_calibration_(name, arm, "follower")
-            arm.set_calibration(calibration)
+                calibration = load_or_run_calibration_(name, arm, "follower")
+                arm.set_calibration(calibration)
         for name, arm in self.leader_arms.items():
-            calibration = load_or_run_calibration_(name, arm, "leader")
-            arm.set_calibration(calibration)
+                calibration = load_or_run_calibration_(name, arm, "leader")
+                arm.set_calibration(calibration)
 
     def set_koch_robot_preset(self):
         def set_operating_mode_(arm):
@@ -424,6 +472,23 @@ class ManipulatorRobot:
                 f"`gripper_open_degree` is set to {self.config.gripper_open_degree}, but None is expected for Aloha instead",
                 stacklevel=1,
             )
+    def set_so100b_robot_preset(self):
+        # MODIFIED: Iterate and check bus type before applying Feetech specific presets
+        for name in self.follower_arms:
+            if not isinstance(self.follower_arms[name], ModbusRTUMotorsBus):
+                self.follower_arms[name].write("Mode", 0)
+                # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
+                self.follower_arms[name].write("P_Coefficient", 16)
+                # Set I_Coefficient and D_Coefficient to default value 0 and 32
+                self.follower_arms[name].write("I_Coefficient", 0)
+                self.follower_arms[name].write("D_Coefficient", 32)
+                # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
+                # which is mandatory for Maximum_Acceleration to take effect after rebooting.
+                self.follower_arms[name].write("Lock", 0)
+                # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
+                # the motors. Note: this configuration is not in the official STS3215 Memory Table
+                self.follower_arms[name].write("Maximum_Acceleration", 254)
+                self.follower_arms[name].write("Acceleration", 254)
 
     def set_so100_robot_preset(self):
         for name in self.follower_arms:
@@ -461,6 +526,11 @@ class ManipulatorRobot:
         # Send goal position to the follower
         follower_goal_pos = {}
         for name in self.follower_arms:
+
+            if name == self.rail_follower_arm_name:
+                follower_goal_pos[name] = torch.from_numpy(self.follower_arms[name].read("Present_Position"))
+                continue
+
             before_fwrite_t = time.perf_counter()
             goal_pos = leader_pos[name]
 
@@ -490,6 +560,8 @@ class ManipulatorRobot:
             follower_pos[name] = self.follower_arms[name].read("Present_Position")
             follower_pos[name] = torch.from_numpy(follower_pos[name])
             self.logs[f"read_follower_{name}_pos_dt_s"] = time.perf_counter() - before_fread_t
+        
+        print(f"follower_pos: {follower_pos}")
 
         # Create state by concatenating follower current position
         state = []
@@ -497,6 +569,8 @@ class ManipulatorRobot:
             if name in follower_pos:
                 state.append(follower_pos[name])
         state = torch.cat(state)
+        
+        print(f"state: {state}")
 
         # Create action by concatenating follower goal position
         action = []
@@ -504,6 +578,8 @@ class ManipulatorRobot:
             if name in follower_goal_pos:
                 action.append(follower_goal_pos[name])
         action = torch.cat(action)
+
+        print(f"action: {action}")
 
         # Capture images from cameras
         images = {}
@@ -585,9 +661,10 @@ class ManipulatorRobot:
             goal_pos = action[from_idx:to_idx]
             from_idx = to_idx
 
+
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
-            if self.config.max_relative_target is not None:
+            if self.config.max_relative_target is not None and not isinstance(self.follower_arms[name], ModbusRTUMotorsBus):
                 present_pos = self.follower_arms[name].read("Present_Position")
                 present_pos = torch.from_numpy(present_pos)
                 goal_pos = ensure_safe_goal_position(goal_pos, present_pos, self.config.max_relative_target)
