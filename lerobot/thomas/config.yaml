@@ -5,12 +5,13 @@ control:
   type: record
   single_task: "Grasp a lego block and put it in the bin."
   fps: 30
-  repo_id: tgossin/nema17
+  repo_id: tgossin/ACTMKS
   tags:
-    - tutorial
+    - mks
   warmup_time_s: 5
-  episode_time_s: 5
-  reset_time_s: 5
-  num_episodes: 3
+  episode_time_s: 50
+  reset_time_s: 10
+  num_episodes: 50
   push_to_hub: false
   display_data: true
+  multi_task: true
