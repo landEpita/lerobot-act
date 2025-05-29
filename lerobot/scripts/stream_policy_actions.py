@@ -1,28 +1,29 @@
 """
-Minimal control script for running a **pre‑trained** policy on the robot – *sans* dataset or sim‑env.
+Run a *pre‑trained* policy on the robot (no dataset, no sim) **with optional one‑hot task vector**.
 
-Changes in this version
-=======================
-* **Fixes** the error *Either one of a dataset metadata or a sim env must be provided.*
-  We now bypass `make_policy()` entirely and load the policy straight from the checkpoint.
-* Keeps the auto‑stop safety and constant‑FPS loop.
-* Everything else (robot/policy config) remains editable in the user section.
+Usage examples
+--------------
+* **Single task** (no one‑hot):
+
+    python run_robot_actions.py
+
+* **Multi‑task** with one‑hot `[0, 1]`:
+
+    python run_robot_actions.py --task 0 1
+
+Everything else (robot config, checkpoint path, FPS…) is editable below.
 """
 
 import time
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
 
 import torch
 
-from lerobot.common.robot_devices.control_utils import predict_action
-from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_config
-from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
-from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
-from lerobot.common.utils.utils import get_safe_torch_device
-from lerobot.common.policies.act.configuration_act import ACTConfig
-# 👉 NEW: direct import of the policy class (no need for make_policy / metadata)
 from lerobot.common.policies.factory import get_policy_class
+from lerobot.common.robot_devices.control_utils import predict_action
+from lerobot.common.robot_devices.motors.configs import ModbusRTUMotorsBusConfig
+from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
 
 ########################################################################################
 # USER‑EDITABLE SECTION                                                                #
@@ -31,14 +32,15 @@ from lerobot.common.policies.factory import get_policy_class
 # 2. Point `PRETRAINED_PATH` to your checkpoint.
 # 3. Adjust runtime parameters (FPS, EPISODE_TIME_S, etc.).
 ########################################################################################
-
 # --- Robot configuration -------------------------------------------------------------
 from lerobot.common.robot_devices.robots.configs import (
     FeetechMotorsBusConfig,
     MonRobot7AxesConfig,
     OpenCVCameraConfig,
 )
-from lerobot.common.robot_devices.motors.configs import ModbusRTUMotorsBusConfig
+from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_config
+from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
+from lerobot.common.utils.utils import get_safe_torch_device
 
 robot_cfg = MonRobot7AxesConfig(
     leader_arms={
@@ -103,9 +105,9 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot/model/mks2"  # <‑‑ change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/ACTMKSfinalTask_80k"  # <-- change me
 POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
-DEVICE = "mps"       # | "cpu" | "mps"
+DEVICE = "mps"  # | "cpu" | "mps"
 
 ########################################################################################
 # RUNTIME PARAMETERS                                                                   #
@@ -122,13 +124,14 @@ EPISODE_TIME_S = 50  # seconds — set to None for infinite runtime
 class ControlParams:
     fps: int = FPS
     episode_time_s: float | None = EPISODE_TIME_S
+    onehot: torch.Tensor | None = None
 
 
 @safe_disconnect
 def run_actions(robot: Robot, params: ControlParams) -> None:
-    """Stream actions from a pre‑trained policy to the robot until timeout or auto‑stop."""
+    """Stream actions from a pre‑trained policy, optionally adding a one‑hot task vector."""
 
-    # ‑‑‑ Connect robot ‑‑‑
+    # --- Connect robot ---
     if not robot.is_connected:
         robot.connect()
 
@@ -137,7 +140,7 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
         if isinstance(arm, ModbusRTUMotorsBus):
             arm.write("Torque_Enable", 1)
 
-    # --- Load policy once (direct load, no metadata needed) ---
+    # --- Load policy once ---
     policy_cls = get_policy_class(POLICY_TYPE)
     policy = policy_cls.from_pretrained(PRETRAINED_PATH).to(DEVICE)
     device = get_safe_torch_device(DEVICE)
@@ -154,6 +157,8 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
 
         # 1) Observation ↦ policy ↦ action
         obs = robot.capture_observation()
+        if params.onehot is not None:
+            obs["onehot_task"] = params.onehot
         act = predict_action(obs, policy, device, use_amp=False)
         sent_act = robot.send_action(act)
         fifo.append(sent_act.clone())
@@ -162,8 +167,8 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
         if len(fifo) == fifo.maxlen:
             std_per_motor = torch.std(torch.stack(list(fifo)), dim=0)
             if torch.all(std_per_motor < per_axis_thresh):
-                print("Auto‑stop: robot idle (std < threshold)")
-                break
+                print("Auto‑stop: robot idle (std < threshold)")
+                # break
 
         # 3) Keep constant FPS
         if params.fps:
@@ -172,14 +177,15 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
         timestamp = time.perf_counter() - start_episode_t
 
     print(">>> Done!")
-    robot.disconnect()  
-    return
 
 
 ########################################################################################
-# ENTRY POINT                                                                          #
+# CLI / ENTRY POINT                                                                    #
 ########################################################################################
+
 if __name__ == "__main__":
-    params = ControlParams()
+    onehot_tensor = torch.tensor([0, 1, 0, 0, 0], dtype=torch.float)
+
+    params = ControlParams(onehot=onehot_tensor)
     robot = make_robot_from_config(robot_cfg)
     run_actions(robot, params)

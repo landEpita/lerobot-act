@@ -1,16 +1,15 @@
-import logging
-import os
-import time
-from dataclasses import asdict, dataclass
-from pprint import pformat
-import numpy as np
-import random
-import shutil
-import rerun as rr
 import collections
+import time
+from dataclasses import dataclass
+
+import torch
 
 # from safetensors.torch import load_file, save_file
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.policies.act.configuration_act import (
+    ACTConfig,
+    NormalizationMode,
+)
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.robot_devices.control_configs import (
     RecordControlConfig,
@@ -18,10 +17,8 @@ from lerobot.common.robot_devices.control_configs import (
 )
 from lerobot.common.robot_devices.control_utils import (
     control_loop,
-    sanity_check_dataset_name,
-    warmup_record,
-    init_keyboard_listener,
     predict_action,
+    sanity_check_dataset_name,
 )
 from lerobot.common.robot_devices.motors.configs import ModbusRTUMotorsBusConfig
 from lerobot.common.robot_devices.motors.modbus_rtu_motor import ModbusRTUMotorsBus
@@ -31,24 +28,15 @@ from lerobot.common.robot_devices.robots.configs import (
     OpenCVCameraConfig,
     So100RobotConfig,
 )
-from lerobot.common.robot_devices.robots.configs import So100RobotConfig
-from lerobot.common.robot_devices.utils import busy_wait
-from lerobot.common.utils.utils import get_safe_torch_device
 from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_config
-from lerobot.common.robot_devices.utils import safe_disconnect
-from lerobot.common.policies.act.configuration_act import (
-    ACTConfig,
-    NormalizationMode,
-)
-from lerobot.configs.types import PolicyFeature, FeatureType
-
-import shutil
-import torch
-
+from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
+from lerobot.common.utils.utils import get_safe_torch_device
+from lerobot.configs.types import FeatureType, PolicyFeature
 
 ########################################################################################
 # Control modes
 ########################################################################################
+
 
 @safe_disconnect
 def teleoperate(robot: Robot, cfg: TeleoperateControlConfig):
@@ -66,13 +54,16 @@ class Config:
     robot: So100RobotConfig
     control: RecordControlConfig
 
+
 @safe_disconnect
 def record(
     robot: Robot,
     cfg: RecordControlConfig,
-    index:int,
+    index: int,
+    onehot_task: list[int] = None,
 ) -> LeRobotDataset:
     cfg.repo_id = cfg.repo_id + "_" + str(index)
+    onehot_task = torch.tensor(onehot_task, dtype=torch.float)
     # Create empty dataset or load existing saved episodes
     sanity_check_dataset_name(cfg.repo_id, cfg.policy)
     dataset = LeRobotDataset.create(
@@ -103,23 +94,24 @@ def record(
 
     if dataset is not None and cfg.fps is not None and dataset.fps != cfg.fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset['fps']} != {cfg.fps}).")
-    
+
     timestamp = 0
     start_episode_t = time.perf_counter()
-    memory  = collections.deque(maxlen=10)
+    memory = collections.deque(maxlen=10)
     fifo = collections.deque(maxlen=20)
     last_value = None
     # print("@@@@@@ Start recording trajectory @@@@@@")
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
-        
+
         observation = robot.capture_observation()
-        #print("observation: ", observation)
+        observation["onehot_task"] = onehot_task
+        # print("observation: ", observation)
         if policy is not None:
             pred_action = predict_action(
                 observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
             )
-           # print("Action sent: ", pred_action[-1])
+            # print("Action sent: ", pred_action[-1])
 
             # memory.append(pred_action[-1])
             # if len(memory) > 5:
@@ -135,9 +127,6 @@ def record(
             # else:
             #     print("Action sent: ", pred_action[-1])
 
-                
-   
-
             # Action can eventually be clipped using `max_relative_target`,
             # so action actually sent is saved in the dataset.
             action = robot.send_action(pred_action)
@@ -149,10 +138,8 @@ def record(
                 std_per_motor = torch.std(torch.stack(list(fifo)), dim=0)
                 print("std_per_motor: ", std_per_motor)
                 if torch.all(std_per_motor < per_axis_thresh):
-                    print(
-                        f"Auto-stop : écart-type {std_per_motor} < "
-                    )
-                    break
+                    print(f"Auto-stop : écart-type {std_per_motor} < ")
+                    # break
 
         if cfg.fps is not None:
             dt_s = time.perf_counter() - start_loop_t
@@ -164,109 +151,110 @@ def record(
 
 
 @dataclass
-class Config_dummy():
+class Config_dummy:
     robot: MonRobot7AxesConfig
     control: RecordControlConfig
 
+
 def control_robot(
     index: int,
+    onehot_task: list[int] = [1, 0, 0],  # Example one-hot task vector
 ):
-    # TODO : fix the call to config here 
+    # TODO : fix the call to config here
     cfg = Config_dummy(
         robot=MonRobot7AxesConfig(
             leader_arms={
-                'left': FeetechMotorsBusConfig(
+                "left": FeetechMotorsBusConfig(
                     port="/dev/tty.usbmodem58FD0166391",
                     motors={
-                        'shoulder_pan': [1, 'sts3215'],
-                        'shoulder_lift': [2, 'sts3215'],
-                        'elbow_flex': [3, 'sts3215'],
-                        'wrist_flex': [4, 'sts3215'],
-                        'wrist_roll': [5, 'sts3215'],
-                        'gripper': [6, 'sts3215']
+                        "shoulder_pan": [1, "sts3215"],
+                        "shoulder_lift": [2, "sts3215"],
+                        "elbow_flex": [3, "sts3215"],
+                        "wrist_flex": [4, "sts3215"],
+                        "wrist_roll": [5, "sts3215"],
+                        "gripper": [6, "sts3215"],
                     },
-                    mock=False
+                    mock=False,
                 )
             },
             follower_arms={
-                'left': FeetechMotorsBusConfig(
+                "left": FeetechMotorsBusConfig(
                     port="/dev/tty.usbmodem58FD0162261",
                     motors={
-                        'shoulder_pan': [1, 'sts3215'],
-                        'shoulder_lift': [2, 'sts3215'],
-                        'elbow_flex': [3, 'sts3215'],
-                        'wrist_flex': [4, 'sts3215'],
-                        'wrist_roll': [5, 'sts3215'],
-                        'gripper': [6, 'sts3215']
+                        "shoulder_pan": [1, "sts3215"],
+                        "shoulder_lift": [2, "sts3215"],
+                        "elbow_flex": [3, "sts3215"],
+                        "wrist_flex": [4, "sts3215"],
+                        "wrist_roll": [5, "sts3215"],
+                        "gripper": [6, "sts3215"],
                     },
-                    mock=False
+                    mock=False,
                 ),
-                "rail_lineaire": ModbusRTUMotorsBusConfig( # Votre axe NEMA17
-                    port="/dev/tty.usbserial-BG00Q7CQ", # Adaptez
-                    motors={"axe_translation": (1, "NEMA17_MKS42D")}, # Nom du moteur et son ID Modbus
+                "rail_lineaire": ModbusRTUMotorsBusConfig(  # Votre axe NEMA17
+                    port="/dev/tty.usbserial-BG00Q7CQ",  # Adaptez
+                    motors={"axe_translation": (1, "NEMA17_MKS42D")},  # Nom du moteur et son ID Modbus
                     baudrate=115200,
                 ),
             },
             cameras={
-                'webcam': OpenCVCameraConfig(
+                "webcam": OpenCVCameraConfig(
                     camera_index=0,
                     fps=30,
                     width=640,
                     height=480,
-                    color_mode='rgb',
+                    color_mode="rgb",
                     channels=3,
                     rotation=None,
-                    mock=False
+                    mock=False,
                 ),
-                # 'camD': OpenCVCameraConfig(
-                #     camera_index=1,
-                #     fps=30,
-                #     width=640,
-                #     height=480,
-                #     color_mode='rgb',
-                #     channels=3,
-                #     rotation=None,
-                #     mock=False
-                # )
+                "camD": OpenCVCameraConfig(
+                    camera_index=1,
+                    fps=30,
+                    width=640,
+                    height=480,
+                    color_mode="rgb",
+                    channels=3,
+                    rotation=None,
+                    mock=False,
+                ),
             },
             max_relative_target=None,
             gripper_open_degree=None,
             mock=False,
-            calibration_dir='.cache/calibration/so100b'
-        ), 
+            calibration_dir=".cache/calibration/so100b",
+        ),
         control=RecordControlConfig(
-            repo_id='tgossin/eval_so100_dataset_mks',
-            single_task='Grasp a lego block and put it in the bin.',
-            # multi_task=True,
+            repo_id="tgossin/eval_so100_dataset_mks",
+            single_task="Grasp a lego block and put it in the bin.",
+            multi_task=True,
+            display_data=True,
             root=None,
             policy=ACTConfig(
                 n_obs_steps=1,
                 normalization_mapping={
-                    'VISUAL': NormalizationMode.MEAN_STD,
-                    'STATE': NormalizationMode.MEAN_STD,
-                    'ACTION': NormalizationMode.MEAN_STD
+                    "VISUAL": NormalizationMode.MEAN_STD,
+                    "STATE": NormalizationMode.MEAN_STD,
+                    "ACTION": NormalizationMode.MEAN_STD,
                 },
                 input_features={
-                    'observation.state': PolicyFeature(type=FeatureType.STATE, shape=(7,)),
-                    'observation.images.mounted': PolicyFeature(type=FeatureType.VISUAL, shape=(3, 480, 640))
+                    "observation.state": PolicyFeature(type=FeatureType.STATE, shape=(7,)),
+                    "observation.images.mounted": PolicyFeature(type=FeatureType.VISUAL, shape=(3, 480, 640)),
                 },
-                output_features={
-                    'action': PolicyFeature(type=FeatureType.ACTION, shape=(7,))
-                },
-                device='cuda',
+                output_features={"action": PolicyFeature(type=FeatureType.ACTION, shape=(7,))},
+                device="cuda",
                 use_amp=False,
                 chunk_size=100,
                 n_action_steps=100,
-                # use_onehot=True,
-                # onehot_action_dim=3,
-                vision_backbone='resnet18',
-                pretrained_backbone_weights='ResNet18_Weights.IMAGENET1K_V1',
+                use_onehot=True,
+                onehot_action_dim=5,
+                vision_backbone="resnet18",
+                pretrained_backbone_weights="ResNet18_Weights.IMAGENET1K_V1",
                 replace_final_stride_with_dilation=0,
                 pre_norm=False,
                 dim_model=512,
                 n_heads=8,
                 dim_feedforward=3200,
-                feedforward_activation='relu',
+                feedforward_activation="relu",
                 n_encoder_layers=4,
                 n_decoder_layers=1,
                 use_vae=True,
@@ -288,21 +276,22 @@ def control_robot(
             video=True,
             push_to_hub=False,
             private=False,
-            tags=[''],
+            tags=[""],
             num_image_writer_processes=0,
             num_image_writer_threads_per_camera=4,
-            display_data=False,
             play_sounds=True,
-            resume=False
-        )
+            resume=False,
+        ),
     )
-    cfg.control.policy.pretrained_path = '/Users/thomas/Documents/lbc/robot/lerobot/model/mks2'
+    cfg.control.policy.pretrained_path = (
+        "/Users/thomas/Documents/lbc/robot/lerobot-act/model/ACTMKSfinalTask_40k"
+    )
 
     robot = make_robot_from_config(cfg.robot)
-    record(robot, cfg.control, index=index)
-
+    record(robot, cfg.control, index=index, onehot_task=onehot_task)
 
 
 if __name__ == "__main__":
     index = 0
-    control_robot(index=index)
+    onehot_task = [1, 0, 0, 0, 0]
+    control_robot(index=index, onehot_task=onehot_task)

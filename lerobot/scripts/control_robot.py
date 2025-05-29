@@ -176,7 +176,7 @@ from lerobot.configs import parser
 # Control modes
 ########################################################################################
 
-NUMBER_OF_TASKS = 3  # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
+NUMBER_OF_TASKS = 5  # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
 
 
 @safe_disconnect
@@ -299,6 +299,7 @@ def record(
         one_hot_vector = [0] * NUMBER_OF_TASKS
         one_hot_vector[cfg.task_index] = 1
         current_task = torch.tensor(one_hot_vector)
+
     while True:
         if recorded_episodes >= cfg.num_episodes:
             break

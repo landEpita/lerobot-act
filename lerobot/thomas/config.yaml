@@ -3,15 +3,17 @@ robot:
 
 control:
   type: record
-  single_task: "Grasp a lego block and put it in the bin."
+  single_task: "make a sandwitch"
   fps: 30
-  repo_id: tgossin/ACTMKS
+  repo_id: tgossin/ACTMKSfinalTaskFromage
   tags:
     - mks
   warmup_time_s: 5
   episode_time_s: 50
   reset_time_s: 10
-  num_episodes: 50
+  num_episodes: 40
   push_to_hub: false
   display_data: true
   multi_task: true
+  task_index: 1
+  resume: true
