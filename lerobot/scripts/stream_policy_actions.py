@@ -59,7 +59,7 @@ robot_cfg = MonRobot7AxesConfig(
     },
     follower_arms={
         "left": FeetechMotorsBusConfig(
-            port="/dev/tty.usbmodem58FD0162261",
+            port="/dev/tty.usbmodem58FD0172321",
             motors={
                 "shoulder_pan": [1, "sts3215"],
                 "shoulder_lift": [2, "sts3215"],
@@ -105,7 +105,8 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/ACTMKSfinalTask_80k"  # <-- change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task-0-20k"  # <-- change me
+# PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task_robot_1_40k"  # <-- change me
 POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
 DEVICE = "mps"  # | "cpu" | "mps"
 
@@ -168,7 +169,7 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
             std_per_motor = torch.std(torch.stack(list(fifo)), dim=0)
             if torch.all(std_per_motor < per_axis_thresh):
                 print("Auto‑stop: robot idle (std < threshold)")
-                # break
+                break
 
         # 3) Keep constant FPS
         if params.fps:
@@ -184,8 +185,9 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
 ########################################################################################
 
 if __name__ == "__main__":
-    onehot_tensor = torch.tensor([0, 1, 0, 0, 0], dtype=torch.float)
+    onehot_tensor = torch.tensor([0, 0, 0, 1, 0], dtype=torch.float)
 
-    params = ControlParams(onehot=onehot_tensor)
+    # params = ControlParams(onehot=onehot_tensor)
+    params = ControlParams()
     robot = make_robot_from_config(robot_cfg)
     run_actions(robot, params)

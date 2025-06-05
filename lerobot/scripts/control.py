@@ -105,7 +105,7 @@ def record(
         start_loop_t = time.perf_counter()
 
         observation = robot.capture_observation()
-        observation["onehot_task"] = onehot_task
+        # observation["onehot_task"] = onehot_task
         # print("observation: ", observation)
         if policy is not None:
             pred_action = predict_action(
@@ -226,7 +226,7 @@ def control_robot(
         control=RecordControlConfig(
             repo_id="tgossin/eval_so100_dataset_mks",
             single_task="Grasp a lego block and put it in the bin.",
-            multi_task=True,
+            multi_task=False,
             display_data=True,
             root=None,
             policy=ACTConfig(
@@ -245,7 +245,7 @@ def control_robot(
                 use_amp=False,
                 chunk_size=100,
                 n_action_steps=100,
-                use_onehot=True,
+                use_onehot=False,  # Set to True if you want to use one-hot encoded tasks
                 onehot_action_dim=5,
                 vision_backbone="resnet18",
                 pretrained_backbone_weights="ResNet18_Weights.IMAGENET1K_V1",

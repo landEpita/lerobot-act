@@ -707,11 +707,9 @@ class LeKiwiRobotConfig(RobotConfig):
     mock: bool = False
 
 
-
-@RobotConfig.register_subclass("so100b") # Donnez un nom unique
+@RobotConfig.register_subclass("so100b")  # Donnez un nom unique
 @dataclass
 class MonRobot7AxesConfig(ManipulatorRobotConfig):
-
     calibration_dir: str = ".cache/calibration/so100b"
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
@@ -738,7 +736,7 @@ class MonRobot7AxesConfig(ManipulatorRobotConfig):
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": FeetechMotorsBusConfig(
-                port="/dev/tty.usbmodem58FD0162261",
+                port="/dev/tty.usbmodem58FD0172321",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [1, "sts3215"],
@@ -749,9 +747,9 @@ class MonRobot7AxesConfig(ManipulatorRobotConfig):
                     "gripper": [6, "sts3215"],
                 },
             ),
-            "rail_lineaire": ModbusRTUMotorsBusConfig( # Votre axe NEMA17
-                port="/dev/tty.usbserial-BG00Q7CQ", # Adaptez
-                motors={"axe_translation": (1, "NEMA17_MKS42D")}, # Nom du moteur et son ID Modbus
+            "rail_lineaire": ModbusRTUMotorsBusConfig(  # Votre axe NEMA17
+                port="/dev/tty.usbserial-BG00Q7CQ",  # Adaptez
+                motors={"axe_translation": (1, "NEMA17_MKS42D")},  # Nom du moteur et son ID Modbus
                 baudrate=115200,
             ),
         }

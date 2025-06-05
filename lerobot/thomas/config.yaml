@@ -5,7 +5,7 @@ control:
   type: record
   single_task: "make a sandwitch"
   fps: 30
-  repo_id: tgossin/ACTMKSfinalTaskFromage
+  repo_id: tgossin/task-0
   tags:
     - mks
   warmup_time_s: 5
@@ -15,5 +15,5 @@ control:
   push_to_hub: false
   display_data: true
   multi_task: true
-  task_index: 1
-  resume: true
+  task_index: 0
+  resume: false
