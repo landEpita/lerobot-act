@@ -1,0 +1,34 @@
+robot:
+  type: so100b_follower
+  port: /dev/tty.usbmodem58FD0172321
+  id: desk_arm
+  rail:
+      port: /dev/tty.usbserial-BG00Q7CQ
+      motors:
+        rail: [1, "NEMA17_MKS42D"]
+  cameras:
+    webcam:
+      type: opencv
+      index_or_path: 0
+      width: 1920
+      height: 1080
+      fps: 30
+    front:
+      type: opencv
+      index_or_path: 1
+      width: 1920
+      height: 1080
+      fps: 30
+
+teleop:
+  type: so100_leader
+  port: /dev/tty.usbmodem58FD0166391
+  id: my_blue_leader_arm
+
+display_data: true
+
+dataset:
+  push_to_hub: false
+  repo_id: tgossin/record-test
+  num_episodes: 2
+  single_task: "Grab the black cube"
