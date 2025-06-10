@@ -105,9 +105,9 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task-0-20k"  # <-- change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/vla"  # <-- change me
 # PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task_robot_1_40k"  # <-- change me
-POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
+POLICY_TYPE = "smolvla"  # "tdmpc", "diffusion", …
 DEVICE = "mps"  # | "cpu" | "mps"
 
 ########################################################################################
@@ -158,8 +158,9 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
 
         # 1) Observation ↦ policy ↦ action
         obs = robot.capture_observation()
-        if params.onehot is not None:
-            obs["onehot_task"] = params.onehot
+        # if params.onehot is not None:
+            # obs["onehot_task"] = params.onehot
+        obs["task"] = "make a sandwitch"
         act = predict_action(obs, policy, device, use_amp=False)
         sent_act = robot.send_action(act)
         fifo.append(sent_act.clone())
