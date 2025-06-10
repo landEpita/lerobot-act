@@ -159,7 +159,7 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
         # 1) Observation ↦ policy ↦ action
         obs = robot.capture_observation()
         # if params.onehot is not None:
-            # obs["onehot_task"] = params.onehot
+        # obs["onehot_task"] = params.onehot
         obs["task"] = "make a sandwitch"
         act = predict_action(obs, policy, device, use_amp=False)
         sent_act = robot.send_action(act)
