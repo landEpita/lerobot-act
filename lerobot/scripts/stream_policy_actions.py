@@ -105,7 +105,7 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task-0-20k"  # <-- change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/act20k"  # <-- change me
 # PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task_robot_1_40k"  # <-- change me
 POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
 DEVICE = "mps"  # | "cpu" | "mps"

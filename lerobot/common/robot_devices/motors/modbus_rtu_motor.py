@@ -198,8 +198,8 @@ class ModbusRTUMotorsBus:
 
             val = phys_vals[i]
             # Ajout de l’offset (donc conversion en encoder count)
-            val = min(enc_max, val)
-            val = max(offset, val)
+            val = min(328697-4000, val)
+            val = max(4000, val)
 
             target_enc = int(round(val + offset))
 
