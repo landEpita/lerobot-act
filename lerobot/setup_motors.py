@@ -34,6 +34,7 @@ from .common.robots import (  # noqa: F401
     lekiwi,
     make_robot_from_config,
     so100_follower,
+    so100b_follower,
     so101_follower,
 )
 from .common.teleoperators import (  # noqa: F401
@@ -50,6 +51,7 @@ COMPATIBLE_DEVICES = [
     "so100_follower",
     "so100_leader",
     "so101_follower",
+    "so100b_follower",
     "so101_leader",
     "lekiwi",
 ]

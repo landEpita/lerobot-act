@@ -57,6 +57,7 @@ from lerobot.common.robots import (  # noqa: F401
     koch_follower,
     make_robot_from_config,
     so100_follower,
+    so100b_follower,
     so101_follower,
 )
 from lerobot.common.teleoperators import (  # noqa: F401
@@ -176,12 +177,15 @@ def record_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    robot.disable_torque()
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
         observation = robot.get_observation()
 
         if policy is not None or dataset is not None:
+            # print("Recording observation:", observation)
+            print("dataset features:", dataset.features if dataset is not None else "None")
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
         if policy is not None:
@@ -200,8 +204,12 @@ def record_loop(
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
         sent_action = robot.send_action(action)
+        print("Action sent:", sent_action)
+
 
         if dataset is not None:
+            print("dataset V2 features:", dataset.features if dataset is not None else "None")
+            sent_action["rail.pos"] = observation["rail.pos"] 
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)

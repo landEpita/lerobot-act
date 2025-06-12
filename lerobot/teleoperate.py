@@ -48,6 +48,7 @@ from lerobot.common.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    so100b_follower,
 )
 from lerobot.common.teleoperators import (
     Teleoperator,
