@@ -736,7 +736,7 @@ class MonRobot7AxesConfig(ManipulatorRobotConfig):
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": FeetechMotorsBusConfig(
-                port="/dev/tty.usbmodem58FD0172321",
+                port="/dev/tty.usbmodem58FD0162241",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [1, "sts3215"],
