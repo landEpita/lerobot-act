@@ -18,7 +18,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-import torch
+import torch, os
 
 from lerobot.common.policies.factory import get_policy_class
 from lerobot.common.robot_devices.control_utils import predict_action
@@ -59,7 +59,7 @@ robot_cfg = MonRobot7AxesConfig(
     },
     follower_arms={
         "left": FeetechMotorsBusConfig(
-            port="/dev/tty.usbmodem58FD0172321",
+            port="/dev/tty.usbmodem58FD0162241",
             motors={
                 "shoulder_pan": [1, "sts3215"],
                 "shoulder_lift": [2, "sts3215"],
@@ -105,7 +105,7 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/act20k"  # <-- change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-4_140k"  # <-- change me
 # PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task_robot_1_40k"  # <-- change me
 POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
 DEVICE = "mps"  # | "cpu" | "mps"
@@ -129,7 +129,7 @@ class ControlParams:
 
 
 @safe_disconnect
-def run_actions(robot: Robot, params: ControlParams) -> None:
+def run_actions(robot: Robot, params: ControlParams, policy) -> None:
     """Stream actions from a pre‑trained policy, optionally adding a one‑hot task vector."""
 
     # --- Connect robot ---
@@ -142,8 +142,6 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
             arm.write("Torque_Enable", 1)
 
     # --- Load policy once ---
-    policy_cls = get_policy_class(POLICY_TYPE)
-    policy = policy_cls.from_pretrained(PRETRAINED_PATH).to(DEVICE)
     device = get_safe_torch_device(DEVICE)
 
     fifo: deque[torch.Tensor] = deque(maxlen=20)
@@ -151,6 +149,7 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
 
     start_episode_t = time.perf_counter()
     timestamp = 0.0
+    start_time = time.time()
 
     print(">>> Running policy…  (Ctrl‑C to stop)")
     while params.episode_time_s is None or timestamp < params.episode_time_s:
@@ -168,8 +167,9 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
         if len(fifo) == fifo.maxlen:
             std_per_motor = torch.std(torch.stack(list(fifo)), dim=0)
             if torch.all(std_per_motor < per_axis_thresh):
-                print("Auto‑stop: robot idle (std < threshold)")
-                break
+                if (time.time() - start_time) > 5:
+                    print(">>> Auto‑stop: robot idle (std < threshold)")
+                    break
 
         # 3) Keep constant FPS
         if params.fps:
@@ -184,10 +184,40 @@ def run_actions(robot: Robot, params: ControlParams) -> None:
 # CLI / ENTRY POINT                                                                    #
 ########################################################################################
 
+PATH = os.path.dirname(os.path.abspath(__file__))
+
+def get_policies():
+    policy_cls = get_policy_class(POLICY_TYPE)
+    policy_0 = policy_cls.from_pretrained(os.path.join("model/act_final-task-0_140k")).to(DEVICE)
+    policy_1 = policy_cls.from_pretrained(os.path.join("model/act_final-task-1_140k")).to(DEVICE)
+    policy_2 = policy_cls.from_pretrained(os.path.join("model/act_final-task-2_140k")).to(DEVICE)
+    policy_3 = policy_cls.from_pretrained(os.path.join("model/act_final-task-3_140k")).to(DEVICE)
+    policy_4 = policy_cls.from_pretrained(os.path.join("model/act_final-task-4_140k")).to(DEVICE)
+    return [policy_0, policy_1, policy_2, policy_3, policy_4]
+
+def get_robot():
+    return make_robot_from_config(robot_cfg)
+
+def run_action(policy, robot):
+    params = ControlParams()
+    run_actions(robot, params, policy)
+
+
 if __name__ == "__main__":
+    policy_cls = get_policy_class(POLICY_TYPE)
+    policy_0 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-0_140k").to(DEVICE)
+    policy_1 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-1_140k").to(DEVICE)
+    policy_2 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-2_140k").to(DEVICE)
+    policy_3 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-3_140k").to(DEVICE)
+    policy_4 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-4_140k").to(DEVICE)
+
     onehot_tensor = torch.tensor([0, 0, 0, 1, 0], dtype=torch.float)
 
     # params = ControlParams(onehot=onehot_tensor)
     params = ControlParams()
     robot = make_robot_from_config(robot_cfg)
-    run_actions(robot, params)
+    polices = [policy_0, policy_1,policy_2 ,policy_4]
+    for i, policy in enumerate(polices):
+        print(f"Running policy {i}...")
+        run_actions(robot, params, policy)
+        time.sleep(1)  # Small delay between policies
