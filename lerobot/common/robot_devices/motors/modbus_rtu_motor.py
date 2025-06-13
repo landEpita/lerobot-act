@@ -201,7 +201,7 @@ class ModbusRTUMotorsBus:
             val = min(328697-4000, val)
             val = max(4000, val)
 
-            target_enc = int(round(val + offset))
+            target_enc = int(round(val))
 
             enc[i] = target_enc
         return enc
