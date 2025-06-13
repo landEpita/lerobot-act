@@ -271,6 +271,7 @@ def control_loop(
 
         if dataset is not None:
             frame = {**observation, **action, "task": single_task}
+            print(f"Recording frame : {frame}")
             dataset.add_frame(frame)
 
         # TODO(Steven): This should be more general (for RemoteRobot instead of checking the name, but anyways it will change soon)

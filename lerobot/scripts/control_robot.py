@@ -141,6 +141,7 @@ from dataclasses import asdict
 from pprint import pformat
 
 import rerun as rr
+import torch
 
 # from safetensors.torch import load_file, save_file
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
@@ -170,13 +171,13 @@ from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_con
 from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
 from lerobot.common.utils.utils import has_method, init_logging, log_say
 from lerobot.configs import parser
-import torch
 
 ########################################################################################
 # Control modes
 ########################################################################################
 
-NUMBER_OF_TASKS = 3 # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
+NUMBER_OF_TASKS = 5  # modifier aussi dans le fichier lerobot/common/datasets/utils.py ligne 75
+
 
 @safe_disconnect
 def calibrate(robot: Robot, cfg: CalibrateControlConfig):
@@ -293,16 +294,15 @@ def record(
         robot.teleop_safety_stop()
 
     recorded_episodes = 0
+    current_task = None
+    if cfg.multi_task:
+        one_hot_vector = [0] * NUMBER_OF_TASKS
+        one_hot_vector[cfg.task_index] = 1
+        current_task = torch.tensor(one_hot_vector)
+
     while True:
         if recorded_episodes >= cfg.num_episodes:
             break
-
-        current_task = None
-        if cfg.multi_task:
-            one_hot_vector = [0] * NUMBER_OF_TASKS
-            current_col = recorded_episodes % NUMBER_OF_TASKS
-            one_hot_vector[current_col] = 1
-            current_task = torch.tensor(one_hot_vector)
 
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
         record_episode(

@@ -652,6 +652,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
     @property
     def features(self) -> dict[str, dict]:
+        print(f"self.meta.features: {self.meta.features}")
         return self.meta.features
 
     @property

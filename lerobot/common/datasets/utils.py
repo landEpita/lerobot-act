@@ -72,7 +72,7 @@ DEFAULT_FEATURES = {
     "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
     "index": {"dtype": "int64", "shape": (1,), "names": None},
     "task_index": {"dtype": "int64", "shape": (1,), "names": None},
-    "onehot_task": {"dtype": "int64", "shape": (3,), "names": None},
+    "onehot_task": {"dtype": "int64", "shape": (5,), "names": None},
 }
 
 
