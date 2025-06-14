@@ -453,18 +453,12 @@ class ACT(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     # ───────────────────────────────────────────────────────────────────────────────
-    # COMPLETE forward  – with multi-layer FiLM biases + correct pos-emb shapes
+    # COMPLETE forward  — VAE + multi-layer FiLM biases, with uniform (seq,B,D) dims
     # ───────────────────────────────────────────────────────────────────────────────
     def forward(
         self, batch: dict[str, Tensor]
     ) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
-        """
-        Returns
-        -------
-        actions : (B, S, action_dim)
-        (mu, log_sigma_x2) or (None, None)
-        """
-        # ------------------------------------------------------------ basic sizes
+        # --------------------------------------------------------- batch meta
         if "observation.images" in batch:
             B = batch["observation.images"][0].shape[0]
             device = batch["observation.images"][0].device
@@ -472,29 +466,29 @@ class ACT(nn.Module):
             B = batch["observation.environment_state"].shape[0]
             device = batch["observation.environment_state"].device
 
+        D = self.config.dim_model
+
         # ==========================================================================
-        # 1.  LATENT (VAE encoder, if enabled)
+        # 1. LATENT via VAE encoder  (unchanged from before, but returns `latent`)
         # ==========================================================================
         if self.config.use_vae and self.training:
-            # [CLS] token
-            cls_tok = self.vae_encoder_cls_embed.weight.expand(B, -1, -1)  # (B,1,D)
+            cls_tok = self.vae_encoder_cls_embed.weight.expand(B, -1, -1)          # (B,1,D)
 
-            # robot-state token (optional)
             if self.config.robot_state_feature:
                 state_tok = self.vae_encoder_robot_state_input_proj(
                     batch["observation.state"]
-                ).unsqueeze(1)  # (B,1,D)
+                ).unsqueeze(1)                                                     # (B,1,D)
 
-            # action-sequence tokens
-            act_tok = self.vae_encoder_action_input_proj(batch["action"])  # (B,S,D)
+            act_tok = self.vae_encoder_action_input_proj(batch["action"])          # (B,S,D)
 
             vae_in = (
                 torch.cat([cls_tok, state_tok, act_tok], 1)
                 if self.config.robot_state_feature
                 else torch.cat([cls_tok, act_tok], 1)
-            )  # (B, S+1/2, D)
+            )                                                                      # (B,S+1/2,D)
 
-            pos_emb = self.vae_encoder_pos_enc[:, : vae_in.size(1)]  # (1,S+1/2,D)
+            pos_emb = self.vae_encoder_pos_enc[:, : vae_in.size(1)]                # (1,S+1/2,D)
+
             mask_front = torch.zeros(
                 (B, 2 if self.config.robot_state_feature else 1),
                 dtype=torch.bool,
@@ -503,12 +497,12 @@ class ACT(nn.Module):
             key_pad = torch.cat([mask_front, batch["action_is_pad"]], 1)
 
             cls_out = self.vae_encoder(
-                vae_in.transpose(0, 1),
+                vae_in.transpose(0, 1),                # (seq,B,D)
                 pos_embed=pos_emb.transpose(0, 1),
                 key_padding_mask=key_pad,
-            )[0]  # (B,D)
+            )[0]                                       # take CLS  (B,D)
 
-            params = self.vae_encoder_latent_output_proj(cls_out)  # (B,2L)
+            params = self.vae_encoder_latent_output_proj(cls_out)                  # (B,2L)
             mu = params[:, : self.config.latent_dim]
             log_sigma_x2 = params[:, self.config.latent_dim :]
             latent = mu + (0.5 * log_sigma_x2).exp() * torch.randn_like(mu)
@@ -518,68 +512,85 @@ class ACT(nn.Module):
                 (B, self.config.latent_dim), dtype=torch.float32, device=device
             )
 
-        # helper: get (B,D) pos-embed slice for 1-D token i
+        # helper → (1,B,D) slice for 1-D positions
         def _pos(idx: int) -> Tensor:
-            return self.encoder_1d_feature_pos_embed.weight[idx].expand(B, -1)  # (B,D)
+            return (
+                self.encoder_1d_feature_pos_embed.weight[idx]
+                .expand(B, -1)                # (B,D)
+                .unsqueeze(0)                 # (1,B,D)
+            )
 
         # ==========================================================================
-        # 2.  1-D TOKENS  (latent, robot state, env state, one-hot)
+        # 2. BUILD token & pos lists  (each element is (seq,B,D))
         # ==========================================================================
-        enc_tok: list[Tensor] = [self.encoder_latent_input_proj(latent)]
-        enc_pos: list[Tensor] = [_pos(0)]
+        tokens: list[Tensor] = []
+        poses: list[Tensor] = []
+
+        # latent
+        tokens.append(self.encoder_latent_input_proj(latent).unsqueeze(0))         # (1,B,D)
+        poses.append(_pos(0))
         cursor = 1
 
+        # robot state
         if self.config.robot_state_feature:
-            enc_tok.append(self.encoder_robot_state_input_proj(batch["observation.state"]))
-            enc_pos.append(_pos(cursor))
-            cursor += 1
-
-        if self.config.env_state_feature:
-            enc_tok.append(
-                self.encoder_env_state_input_proj(batch["observation.environment_state"])
+            tokens.append(
+                self.encoder_robot_state_input_proj(batch["observation.state"])
+                .unsqueeze(0)
             )
-            enc_pos.append(_pos(cursor))
+            poses.append(_pos(cursor))
             cursor += 1
 
+        # env state
+        if self.config.env_state_feature:
+            tokens.append(
+                self.encoder_env_state_input_proj(batch["observation.environment_state"])
+                .unsqueeze(0)
+            )
+            poses.append(_pos(cursor))
+            cursor += 1
+
+        # one-hot task
         if self.use_onehot:
             onehot = batch["onehot_task"].to(torch.float32)
-            enc_tok.append(self.encoder_onehot_action_proj(onehot))
-            enc_pos.append(_pos(cursor))
+            tokens.append(self.encoder_onehot_action_proj(onehot).unsqueeze(0))
+            poses.append(_pos(cursor))
+        else:
+            onehot = None  # still used by image backbone
 
         # ==========================================================================
-        # 3.  IMAGE TOKENS  (ResNet with FiLM β after layers 2-4)
+        # 3.  IMAGE TOKENS  (task-aware ResNet backbone)
         # ==========================================================================
         if self.config.image_features:
-            cam_feats, cam_pos_all = [], []
-            for img in batch["observation.images"]:
-                feat = self.backbone(img, onehot if self.use_onehot else None)[
-                    "feature_map"
-                ]  # (B,C,H,W) task-aware
+            cam_tok, cam_pos = [], []
 
-                pos = self.encoder_cam_feat_pos_embed(feat).to(dtype=feat.dtype)
-                feat = self.encoder_img_feat_input_proj(feat)  # (B,D,H,W)
+            for img in batch["observation.images"]:
+                feat = self.backbone(img, onehot)["feature_map"]                   # (B,C,H,W)
+                pos  = self.encoder_cam_feat_pos_embed(feat).to(dtype=feat.dtype)  # (B,D//2*2,H,W)
+                feat = self.encoder_img_feat_input_proj(feat)                      # (B,D,H,W)
 
                 # flatten spatial dims
-                feat = einops.rearrange(feat, "b c h w -> (h w) b c")
-                pos = einops.rearrange(pos, "b c h w -> (h w) b c")
+                feat = einops.rearrange(feat, "b c h w -> (h w) b c")              # (P,B,D)
+                pos  = einops.rearrange(pos,  "b c h w -> (h w) b c")              # (P,B,D)
 
-                cam_feats.append(feat)
-                cam_pos_all.append(pos)
+                cam_tok.append(feat)
+                cam_pos.append(pos)
 
-            enc_tok.extend(torch.cat(cam_feats, 0))
-            enc_pos.extend(torch.cat(cam_pos_all, 0))
-
-        # stack → (seq,B,D)
-        enc_tok = torch.stack(enc_tok, 0)
-        enc_pos = torch.stack(enc_pos, 0)
+            tokens.append(torch.cat(cam_tok, 0))                                   # (ΣP,B,D)
+            poses.append(torch.cat(cam_pos, 0))                                    # (ΣP,B,D)
 
         # ==========================================================================
-        # 4.  TRANSFORMER ENCODER & DECODER
+        # 4.  CONCAT seq dimension  →  (seq,B,D)
+        # ==========================================================================
+        enc_tok = torch.cat(tokens, 0)
+        enc_pos = torch.cat(poses, 0)
+
+        # ==========================================================================
+        # 5.  TRANSFORMER
         # ==========================================================================
         enc_out = self.encoder(enc_tok, pos_embed=enc_pos)
 
         dec_in = torch.zeros(
-            (self.config.chunk_size, B, self.config.dim_model),
+            (self.config.chunk_size, B, D),
             dtype=enc_out.dtype,
             device=device,
         )
@@ -591,7 +602,7 @@ class ACT(nn.Module):
         )
 
         # ==========================================================================
-        # 5.  ACTION HEAD
+        # 6.  ACTION HEAD
         # ==========================================================================
         actions = self.action_head(dec_out.transpose(0, 1))  # (B,S,action_dim)
         return actions, (mu, log_sigma_x2)
