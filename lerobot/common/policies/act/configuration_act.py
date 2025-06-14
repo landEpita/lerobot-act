@@ -138,6 +138,7 @@ class ACTConfig(PreTrainedConfig):
     optimizer_lr: float = 1e-5
     optimizer_weight_decay: float = 1e-4
     optimizer_lr_backbone: float = 1e-5
+    optimizer_lr_film   = 1e-4  
 
     def __post_init__(self):
         super().__post_init__()

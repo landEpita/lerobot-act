@@ -78,26 +78,30 @@ class ACTPolicy(PreTrainedPolicy):
 
         self.reset()
 
-    def get_optim_params(self) -> dict:
-        # TODO(aliberts, rcadene): As of now, lr_backbone == lr
-        # Should we remove this and just `return self.parameters()`?
+    def get_optim_params(self) -> list[dict]:
+        high_lr = self.config.optimizer_lr_film  # e.g. 10 × base lr
+        base_lr = self.config.optimizer_lr
+        bb_lr   = self.config.optimizer_lr_backbone
+
+        # convenient holders
+        film_params, backbone_params, base_params = [], [], []
+
+        for name, p in self.named_parameters():
+            if not p.requires_grad:
+                continue
+            if name.startswith("model.backbone.film"):
+                film_params.append(p)                  # γ, β layers
+            elif name.startswith("model.backbone"):
+                backbone_params.append(p)              # convs, bn, etc.
+            else:
+                base_params.append(p)                  # transformer, heads …
+
         return [
-            {
-                "params": [
-                    p
-                    for n, p in self.named_parameters()
-                    if not n.startswith("model.backbone") and p.requires_grad
-                ]
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.named_parameters()
-                    if n.startswith("model.backbone") and p.requires_grad
-                ],
-                "lr": self.config.optimizer_lr_backbone,
-            },
+            {"params": base_params,     "lr": base_lr},
+            {"params": backbone_params, "lr": bb_lr},
+            {"params": film_params,     "lr": high_lr},   # NEW GROUP
         ]
+
 
     def reset(self):
         """This should be called whenever the environment is reset."""
