@@ -79,28 +79,50 @@ class ACTPolicy(PreTrainedPolicy):
         self.reset()
 
     def get_optim_params(self) -> list[dict]:
-        high_lr = self.config.optimizer_lr_film  # e.g. 10 × base lr
-        base_lr = self.config.optimizer_lr
-        bb_lr   = self.config.optimizer_lr_backbone
+        """
+        Builds four param-groups:
+            0. base      : transformer, action head, etc.
+            1. backbone  : ResNet conv / BN (but **not** FiLM or LoRA)
+            2. film      : γ / β scale–shift layers
+            3. lora      : low-rank (A, B) adapters on 1×1 conv
+        """
+        cfg = self.config
 
-        # convenient holders
-        film_params, backbone_params, base_params = [], [], []
+        # fallbacks if you didn’t add these fields in the yaml / argparse
+        lr_base     = getattr(cfg, "optimizer_lr",            1e-4)
+        lr_backbone = getattr(cfg, "optimizer_lr_backbone",   lr_base)
+        lr_film     = getattr(cfg, "optimizer_lr_film",       lr_base * 10)
+        lr_lora     = getattr(cfg, "optimizer_lr_lora",       lr_base * 10)
 
-        for name, p in self.named_parameters():
-            if not p.requires_grad:
+        base_params, backbone_params, film_params, lora_params = [], [], [], []
+
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
                 continue
+
             if name.startswith("model.backbone.film"):
-                film_params.append(p)                  # γ, β layers
+                film_params.append(param)
+
+            elif "encoder_img_feat_input_proj" in name and (
+                ".A." in name or ".B" in name
+            ):
+                # parameters of the LoRAConv1x1 adapter
+                lora_params.append(param)
+
             elif name.startswith("model.backbone"):
-                backbone_params.append(p)              # convs, bn, etc.
+                # plain ResNet weights / BN
+                backbone_params.append(param)
+
             else:
-                base_params.append(p)                  # transformer, heads …
+                base_params.append(param)
 
         return [
-            {"params": base_params,     "lr": base_lr},
-            {"params": backbone_params, "lr": bb_lr},
-            {"params": film_params,     "lr": high_lr},   # NEW GROUP
+            {"params": base_params,     "lr": lr_base},
+            {"params": backbone_params, "lr": lr_backbone},
+            {"params": film_params,     "lr": lr_film},
+            {"params": lora_params,     "lr": lr_lora},
         ]
+
 
 
     def reset(self):
@@ -327,6 +349,47 @@ class TaskAwareResNet(nn.Module):
 
 
 
+class LoRAConv1x1(nn.Module):
+    """
+    Low-rank adapter for a 1×1 Conv.
+    W_out = W + ΔW(task),  ΔW = A(task) @ B   (rank r)
+    """
+    def __init__(self, conv: nn.Conv2d, n_tasks: int, rank: int = 4, init_std: float = 0.02):
+        super().__init__()
+        assert conv.kernel_size == (1, 1), "LoRAConv1x1 expects a 1×1 conv"
+
+        self.conv = conv
+        C_out, C_in, _, _ = conv.weight.shape
+        self.rank = rank
+
+        # task-specific "A" generator  (n_tasks × (C_out·r))
+        self.A = nn.Embedding(n_tasks, C_out * rank)
+        nn.init.normal_(self.A.weight, 0.0, init_std)
+
+        # shared "B"  (r × C_in)
+        self.B = nn.Parameter(torch.empty(rank, C_in))
+        nn.init.kaiming_uniform_(self.B, a=math.sqrt(5))
+
+    def forward(self, x, task_idx: Tensor | None):
+        # plain conv
+        out = self.conv(x)
+
+        if task_idx is None:
+            return out
+
+        # build ΔW(task) on the fly  ⇒  (B,C_out,C_in,1,1)
+        ΔW = self.A(task_idx).view(-1, self.rank)          # (B,C_out·r) → (B,C_out,r)
+        ΔW = torch.einsum("bor,rc->boc", ΔW, self.B)       # (B,C_out,C_in)
+        ΔW = ΔW.unsqueeze(-1).unsqueeze(-1)                # add spatial dims
+
+        # conv via weight multiplication (1×1 => matmul)
+        x_flat = x.flatten(2)                              # (B,C_in,H·W)
+        out_lora = torch.einsum("bochw,bci->bohw", ΔW, x_flat).view_as(out)
+        return out + out_lora
+
+
+
+
 
 class ACT(nn.Module):
     """Action Chunking Transformer: The underlying neural network for ACTPolicy.
@@ -438,6 +501,10 @@ class ACT(nn.Module):
             self.encoder_img_feat_input_proj = nn.Conv2d(
                 feat_C, config.dim_model, kernel_size=1
             )
+            self.encoder_img_feat_input_proj = LoRAConv1x1(
+                self.encoder_img_feat_input_proj, n_tasks=config.onehot_action_dim, rank=4
+            )
+
 
         n_1d_tokens = 1  # latent
         if self.config.robot_state_feature:
@@ -590,7 +657,9 @@ class ACT(nn.Module):
                     pos = pos.expand(feat.size(0), -1, -1, -1).contiguous()      # (B,D,H,W)
                 # --------------------------------------------------------------------------
 
-                feat = self.encoder_img_feat_input_proj(feat)                    # (B,D,H,W)
+                task_idx = onehot.argmax(-1)                  # tensor (B,) long
+                feat = self.encoder_img_feat_input_proj(feat, task_idx)
+
 
                 # flatten spatial dims
                 feat = einops.rearrange(feat, "b c h w -> (h w) b c")            # (P,B,D)
