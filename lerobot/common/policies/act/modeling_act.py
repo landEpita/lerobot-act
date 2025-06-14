@@ -371,23 +371,32 @@ class LoRAConv1x1(nn.Module):
         nn.init.kaiming_uniform_(self.B, a=math.sqrt(5))
 
     def forward(self, x, task_idx: Tensor | None):
-        out = self.conv(x)
-
+        """
+        x         : (B, C_in, H, W)
+        task_idx  : (B,)  long
+        """
+        out = self.conv(x)                         # vanilla 1×1 conv  → (B,C_out,H,W)
         if task_idx is None:
             return out
 
-        # ---------------- FIX: reshape to (B, C_out, r) -----------------------
-        B, C_out = task_idx.size(0), self.conv.weight.size(0)
-        ΔW_flat = self.A(task_idx)                         # (B, C_out * r)
-        ΔW = ΔW_flat.view(B, C_out, self.rank)            # (B, C_out, r)
-        # ---------------------------------------------------------------------
+        B, C_out, H, W = out.shape
+        C_in = x.size(1)
 
-        ΔW = torch.einsum("bor,rc->boc", ΔW, self.B)       # (B, C_out, C_in)
-        ΔW = ΔW.unsqueeze(-1).unsqueeze(-1)                # (B,C_out,C_in,1,1)
+        # ------------------- ΔW(task)  -----------------------------------------
+        ΔW_flat = self.A(task_idx)                 # (B, C_out * r)
+        ΔW = ΔW_flat.view(B, C_out, self.rank)     # (B, C_out, r)    ≡ A(task)
 
-        x_flat = x.flatten(2)                              # (B, C_in, H*W)
-        out_lora = torch.einsum("boc...,bci->bo...", ΔW, x_flat).view_as(out)
+        # einsum → (B,C_out,C_in)   (A × B)
+        ΔW = torch.einsum("bor,rc->boc", ΔW, self.B)   # (B, C_out, C_in)
+        # -----------------------------------------------------------------------
+
+        # Apply ΔW manually (because kernel = 1×1)
+        x_flat  = x.flatten(2)                     # (B, C_in,  H*W)
+        delta   = torch.einsum("boc,bci->boi", ΔW, x_flat)   # (B,C_out,H*W)
+        out_lora = delta.view(B, C_out, H, W)      # reshape back
+
         return out + out_lora
+
 
 
 
