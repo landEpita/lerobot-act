@@ -264,13 +264,21 @@ class ACTTemporalEnsembler:
         return action
     
 
-# ----------------------------------------------------------------------------- 
-# Task-aware ResNet that adds a FiLM-style β shift after layers 2-4
-# ----------------------------------------------------------------------------- 
+# --------------------------------------------------------------------------- #
+# Task-aware ResNet with FiLM (scale γ + shift β) after layers 2-4
+# --------------------------------------------------------------------------- #
 class TaskAwareResNet(nn.Module):
-    def __init__(self, resnet: nn.Module, onehot_dim: int):
+    def __init__(self, resnet: nn.Module, onehot_dim: int, init_std: float = 0.02):
+        """
+        Args
+        ----
+        resnet      : a torchvision ResNet (18/34/50/101/152 …).
+        onehot_dim  : size of the task one-hot vector.
+        init_std    : std-dev of the Gaussian used to init γ offsets.
+                      β is still 0; γ starts at 1 ± init_std.
+        """
         super().__init__()
-        self.r = resnet                                    # the vanilla ResNet
+        self.r = resnet
 
         def _out_channels(layer):
             blk = layer[-1]
@@ -278,38 +286,41 @@ class TaskAwareResNet(nn.Module):
 
         C2, C3, C4 = map(_out_channels, (self.r.layer2, self.r.layer3, self.r.layer4))
 
-        # one-hot  → channel-wise bias  (β only; γ optional)
-        self.bias2 = nn.Linear(onehot_dim, C2, bias=False)
-        self.bias3 = nn.Linear(onehot_dim, C3, bias=False)
-        self.bias4 = nn.Linear(onehot_dim, C4, bias=False)
-        for m in (self.bias2, self.bias3, self.bias4):
-            nn.init.zeros_(m.weight)                       # start from identity
+        # one-hot → [γ | β]  (2C parameters per layer)
+        self.film2 = nn.Linear(onehot_dim, C2 * 2, bias=False)
+        self.film3 = nn.Linear(onehot_dim, C3 * 2, bias=False)
+        self.film4 = nn.Linear(onehot_dim, C4 * 2, bias=False)
 
-    @torch.no_grad()          # keeps BN statistics identical at step 0
-    def _add_bias(self, x, lin, task):
-        if task is None:                                    # e.g. eval without tasks
+        # initialise: γ_offset ~ N(0, init_std), β = 0
+        for lin in (self.film2, self.film3, self.film4):
+            nn.init.normal_(lin.weight[: C2 if lin is self.film2 else C3 if lin is self.film3 else C4],
+                            mean=0.0, std=init_std)          # γ offsets
+            nn.init.zeros_(lin.weight[C2 if lin is self.film2 else C3 if lin is self.film3 else C4:])  # β
+
+    def _apply_film(self, x, film_layer, task):
+        """FiLM: (γ_offset, β) = split(W onehot);  return (1+γ) * x + β"""
+        if task is None:
             return x
-        β = lin(task).unsqueeze(-1).unsqueeze(-1)           # (B,C,1,1)
-        return x + β
+        γβ = film_layer(task)                       # (B, 2C)
+        γ, β = γβ.chunk(2, dim=-1)
+        γ = 1.0 + γ.view(-1, x.size(1), 1, 1)       # start near 1
+        β = β.view(-1, x.size(1), 1, 1)
+        return γ * x + β
 
     def forward(self, x, task_onehot=None):
-        r = self.r                                         # alias
+        r = self.r
 
         x = r.conv1(x); x = r.bn1(x); x = r.relu(x); x = r.maxpool(x)
         x = r.layer1(x)
 
-        x = r.layer2(x)
-        x = self._add_bias(x, self.bias2, task_onehot)
+        x = self._apply_film(r.layer2(x), self.film2, task_onehot)
+        x = self._apply_film(r.layer3(x), self.film3, task_onehot)
+        x = self._apply_film(r.layer4(x), self.film4, task_onehot)
 
-        x = r.layer3(x)
-        x = self._add_bias(x, self.bias3, task_onehot)
-
-        x = r.layer4(x)
-        x = self._add_bias(x, self.bias4, task_onehot)
-
-        # mimic IntermediateLayerGetter output so the rest of ACT stays unchanged
+        # Keep the original ACT interface
         return {"feature_map": x}
-# -----------------------------------------------------------------------------
+# --------------------------------------------------------------------------- #
+
 
 
 
