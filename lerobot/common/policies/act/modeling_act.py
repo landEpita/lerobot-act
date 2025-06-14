@@ -564,16 +564,27 @@ class ACT(nn.Module):
             cam_tok, cam_pos = [], []
 
             for img in batch["observation.images"]:
-                feat = self.backbone(img, onehot)["feature_map"]                   # (B,C,H,W)
-                pos  = self.encoder_cam_feat_pos_embed(feat).to(dtype=feat.dtype)  # (B,D//2*2,H,W)
-                feat = self.encoder_img_feat_input_proj(feat)                      # (B,D,H,W)
+                # --------------------------------------------------------------------------
+                # inside: for img in batch["observation.images"]:
+                feat = self.backbone(img, onehot)["feature_map"]                 # (B,C,H,W)
+
+                pos = self.encoder_cam_feat_pos_embed(feat).to(dtype=feat.dtype) # (1 or B,D,H,W)
+
+                # --- NEW: make sure pos has the same batch size as `feat`
+                if pos.size(0) == 1 and feat.size(0) > 1:                        # broadcast case
+                    pos = pos.expand(feat.size(0), -1, -1, -1).contiguous()      # (B,D,H,W)
+                # --------------------------------------------------------------------------
+
+                feat = self.encoder_img_feat_input_proj(feat)                    # (B,D,H,W)
 
                 # flatten spatial dims
-                feat = einops.rearrange(feat, "b c h w -> (h w) b c")              # (P,B,D)
-                pos  = einops.rearrange(pos,  "b c h w -> (h w) b c")              # (P,B,D)
+                feat = einops.rearrange(feat, "b c h w -> (h w) b c")            # (P,B,D)
+                pos  = einops.rearrange(pos,  "b c h w -> (h w) b c")            # (P,B,D)
 
                 cam_tok.append(feat)
                 cam_pos.append(pos)
+                # --------------------------------------------------------------------------
+
 
             tokens.append(torch.cat(cam_tok, 0))                                   # (ΣP,B,D)
             poses.append(torch.cat(cam_pos, 0))                                    # (ΣP,B,D)
