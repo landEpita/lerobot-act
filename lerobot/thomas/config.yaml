@@ -16,4 +16,4 @@ control:
   display_data: true
   multi_task: true
   task_index: 4
-  resume: false
+  resume: true
