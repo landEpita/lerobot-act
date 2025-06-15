@@ -141,28 +141,36 @@ class ACTPolicy(PreTrainedPolicy):
             batch = dict(batch)
             batch["observation.images"] = [batch[key] for key in self.config.image_features]
 
+        # Temporal ensemble path
         if self.config.temporal_ensemble_coeff is not None:
-            actions = self.model(batch)[0][0]
+            actions = self.model(batch)[0][0]          # actions tensor only
             actions = self.unnormalize_outputs({"action": actions})["action"]
-            action = self.temporal_ensembler.update(actions)
-            return action
+            return self.temporal_ensembler.update(actions)
 
+        # Non-ensemble path – fill the queue when empty
         if len(self._action_queue) == 0:
-            (actions_chunk, stop_chunk) = self.model(batch)[0]
-            actions_chunk = actions_chunk[:, : self.config.n_action_steps]
-            stop_chunk = stop_chunk[:, : self.config.n_action_steps]
+            outputs = self.model(batch)[0]             # (actions, stop_logits/None)
+            actions_chunk = outputs[0][:, : self.config.n_action_steps]
+            stop_chunk   = outputs[1]
+            if stop_chunk is not None:
+                stop_chunk = stop_chunk[:, : self.config.n_action_steps]
 
             actions_chunk = self.unnormalize_outputs({"action": actions_chunk})["action"]
 
-            # Queue stores both actions and stop logits
-            self._action_queue.extend(
-                zip(actions_chunk.transpose(0, 1), stop_chunk.transpose(0, 1))
-            )
+            if self.config.predict_stop_token:
+                # queue tuples  (action_step, stop_logit)
+                self._action_queue.extend(
+                    zip(actions_chunk.transpose(0, 1), stop_chunk.transpose(0, 1))
+                )
+            else:
+                self._action_queue.extend(actions_chunk.transpose(0, 1))
 
-        action_step, stop_logit = self._action_queue.popleft()
-        stop_prob = torch.sigmoid(stop_logit)
-        done = (stop_prob.item() > self.config.stop_threshold)
-        return action_step, done
+        if self.config.predict_stop_token:
+            action_step, stop_logit = self._action_queue.popleft()
+            done = torch.sigmoid(stop_logit).item() > self.config.stop_threshold
+            return action_step, done
+        else:
+            return self._action_queue.popleft()
 
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
@@ -178,15 +186,18 @@ class ACTPolicy(PreTrainedPolicy):
             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
         ).mean()
 
-        print(stop_logits.shape, batch["is_task_complete"].shape)
+                # Stop-token BCE loss (only computed when the head is present)
+        if self.config.predict_stop_token:
+            bce_loss = F.binary_cross_entropy_with_logits(
+                stop_logits.squeeze(-1),
+                batch["is_task_complete"].float(),
+                weight=(~batch["action_is_pad"]).float(),
+            )
+            λ_stop = self.config.stop_loss_weight
+        else:
+            bce_loss = torch.tensor(0.0, device=l1_loss.device)
+            λ_stop = 0.0
 
-        bce_loss = F.binary_cross_entropy_with_logits(
-            stop_logits.squeeze(-1),
-            batch["is_task_complete"].float(),
-            weight=(~batch["action_is_pad"]).float()
-        )
-
-        λ_stop = self.config.stop_loss_weight
 
         loss_dict = {
             "l1_loss": l1_loss.item(),
@@ -539,16 +550,19 @@ class ACT(nn.Module):
 
         # ---------- Decoder positional emb. & action head -------------------------
         self.decoder_pos_embed = nn.Embedding(config.chunk_size, config.dim_model)
-        self.action_head = nn.Linear(
-            config.dim_model, self.config.action_feature.shape[0]
-        )
 
-        # ─ ACT.__init__ ───────────────────────────────────────────────
-        self.stop_head = nn.Sequential(
-            nn.Linear(config.dim_model, config.dim_model // 2),
-            nn.ReLU(),
-            nn.Linear(config.dim_model // 2, 1)          # (B,S,1) logits
-        )
+                # Final action regression head
+        self.action_head = nn.Linear(config.dim_model,
+                                     self.config.action_feature.shape[0])
+
+        # Optional stop-token branch
+        if config.predict_stop_token:
+            self.stop_head = nn.Sequential(
+                nn.Linear(config.dim_model, config.dim_model // 2),
+                nn.ReLU(),
+                nn.Linear(config.dim_model // 2, 1)   # (B,S,1) logits
+            )
+
 
 
         self._reset_parameters()
@@ -722,14 +736,13 @@ class ACT(nn.Module):
             decoder_pos_embed=self.decoder_pos_embed.weight.unsqueeze(1),
         )
 
-        # ==========================================================================
-        # 6.  ACTION HEAD
-        # ==========================================================================
-        # ─ ACT.forward (bottom of the function) ──────────────────────
-        actions     = self.action_head(dec_out.transpose(0, 1))  # (B,S,A)
-        stop_logits = self.stop_head(dec_out.transpose(0, 1))    # (B,S,1)
+        x = dec_out.transpose(0, 1)          # (B,S,D)
+
+        actions = self.action_head(x)        # (B,S,A)
+        stop_logits = self.stop_head(x) if self.config.predict_stop_token else None
 
         return (actions, stop_logits), (mu, log_sigma_x2)
+
 
 
 

@@ -134,6 +134,12 @@ class ACTConfig(PreTrainedConfig):
     dropout: float = 0.1
     kl_weight: float = 10.0
 
+     # Stop-token flags
+    predict_stop_token: bool = True        # enable the extra head & BCE loss
+    stop_loss_weight:  float = 1.0         # λ_stop in the loss
+    stop_threshold:    float = 0.5         # sigmoid > τ ⇒ episode done
+
+
     # Training preset
     optimizer_lr: float = 1e-5
     optimizer_weight_decay: float = 1e-4
