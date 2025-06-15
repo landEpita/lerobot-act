@@ -52,6 +52,9 @@ def resolve_delta_timestamps(
             returns `None` if the resulting dict is empty.
     """
     delta_timestamps = {}
+    print("is_task_complete" in ds_meta.features)        # ➜  False
+    print(ds_meta.features.keys())                       #     (no flag listed)
+
     for key in ds_meta.features:
         if key == "next.reward" and cfg.reward_delta_indices is not None:
             delta_timestamps[key] = [i / ds_meta.fps for i in cfg.reward_delta_indices]
