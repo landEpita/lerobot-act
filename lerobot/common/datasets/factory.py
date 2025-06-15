@@ -57,6 +57,10 @@ def resolve_delta_timestamps(
             delta_timestamps[key] = [i / ds_meta.fps for i in cfg.reward_delta_indices]
         if key == "action" and cfg.action_delta_indices is not None:
             delta_timestamps[key] = [i / ds_meta.fps for i in cfg.action_delta_indices]
+        if key == "is_task_complete" and cfg.action_delta_indices is not None:
+            # use the same window as action so lengths match
+            delta = [i / ds_meta.fps for i in cfg.action_delta_indices]
+            delta_timestamps[key] = delta
         if key.startswith("observation.") and cfg.observation_delta_indices is not None:
             delta_timestamps[key] = [i / ds_meta.fps for i in cfg.observation_delta_indices]
 
