@@ -43,20 +43,20 @@ from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
 from lerobot.common.utils.utils import get_safe_torch_device
 
 robot_cfg = MonRobot7AxesConfig(
-    leader_arms={
-        "left": FeetechMotorsBusConfig(
-            port="/dev/tty.usbmodem58FD0166391",
-            motors={
-                "shoulder_pan": [1, "sts3215"],
-                "shoulder_lift": [2, "sts3215"],
-                "elbow_flex": [3, "sts3215"],
-                "wrist_flex": [4, "sts3215"],
-                "wrist_roll": [5, "sts3215"],
-                "gripper": [6, "sts3215"],
-            },
-            mock=False,
-        )
-    },
+    # leader_arms={
+    #     "left": FeetechMotorsBusConfig(
+    #         port="/dev/tty.usbmodem58FD0166391",
+    #         motors={
+    #             "shoulder_pan": [1, "sts3215"],
+    #             "shoulder_lift": [2, "sts3215"],
+    #             "elbow_flex": [3, "sts3215"],
+    #             "wrist_flex": [4, "sts3215"],
+    #             "wrist_roll": [5, "sts3215"],
+    #             "gripper": [6, "sts3215"],
+    #         },
+    #         mock=False,
+    #     )
+    # },
     follower_arms={
         "left": FeetechMotorsBusConfig(
             port="/dev/tty.usbmodem58FD0162241",
@@ -210,13 +210,15 @@ if __name__ == "__main__":
     policy_2 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-2_140k").to(DEVICE)
     policy_3 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-3_140k").to(DEVICE)
     policy_4 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-4_140k").to(DEVICE)
+    policy_act = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/leo-3").to(DEVICE)
+    
 
-    onehot_tensor = torch.tensor([0, 0, 0, 1, 0], dtype=torch.float)
+    onehot_tensor = torch.tensor([1, 0, 0, 0, 0], dtype=torch.float)
 
-    # params = ControlParams(onehot=onehot_tensor)
-    params = ControlParams()
+    params = ControlParams(onehot=onehot_tensor)
+    # params = ControlParams()
     robot = make_robot_from_config(robot_cfg)
-    polices = [policy_0, policy_1,policy_2 ,policy_4]
+    polices = [policy_act]
     for i, policy in enumerate(polices):
         print(f"Running policy {i}...")
         run_actions(robot, params, policy)
