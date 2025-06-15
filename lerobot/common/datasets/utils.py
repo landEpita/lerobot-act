@@ -73,6 +73,7 @@ DEFAULT_FEATURES = {
     "index": {"dtype": "int64", "shape": (1,), "names": None},
     "task_index": {"dtype": "int64", "shape": (1,), "names": None},
     "onehot_task": {"dtype": "int64", "shape": (5,), "names": None},
+    "is_task_complete": {"dtype": "int64", "shape": (1,), "names": None},  # NEW
 }
 
 
