@@ -43,20 +43,20 @@ from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
 from lerobot.common.utils.utils import get_safe_torch_device
 
 robot_cfg = MonRobot7AxesConfig(
-    leader_arms={
-        "left": FeetechMotorsBusConfig(
-            port="/dev/tty.usbmodem58FD0166391",
-            motors={
-                "shoulder_pan": [1, "sts3215"],
-                "shoulder_lift": [2, "sts3215"],
-                "elbow_flex": [3, "sts3215"],
-                "wrist_flex": [4, "sts3215"],
-                "wrist_roll": [5, "sts3215"],
-                "gripper": [6, "sts3215"],
-            },
-            mock=False,
-        )
-    },
+    # leader_arms={
+    #     "left": FeetechMotorsBusConfig(
+    #         port="/dev/tty.usbmodem58FD0166391",
+    #         motors={
+    #             "shoulder_pan": [1, "sts3215"],
+    #             "shoulder_lift": [2, "sts3215"],
+    #             "elbow_flex": [3, "sts3215"],
+    #             "wrist_flex": [4, "sts3215"],
+    #             "wrist_roll": [5, "sts3215"],
+    #             "gripper": [6, "sts3215"],
+    #         },
+    #         mock=False,
+    #     )
+    # },
     follower_arms={
         "left": FeetechMotorsBusConfig(
             port="/dev/tty.usbmodem58FD0162241",
@@ -105,7 +105,7 @@ robot_cfg = MonRobot7AxesConfig(
 )
 
 # --- Policy --------------------------------------------------------------------------
-PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-0_140k"  # <-- change me
+PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-4_140k"  # <-- change me
 # PRETRAINED_PATH = "/Users/thomas/Documents/lbc/robot/lerobot-act/model/task_robot_1_40k"  # <-- change me
 POLICY_TYPE = "act"  # "tdmpc", "diffusion", …
 DEVICE = "mps"  # | "cpu" | "mps"
@@ -210,14 +210,14 @@ if __name__ == "__main__":
     policy_2 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-2_140k").to(DEVICE)
     policy_3 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-3_140k").to(DEVICE)
     policy_4 = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/act_final-task-4_140k").to(DEVICE)
-    policy_condi = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/conditioned_act").to(DEVICE)
+    policy_act = policy_cls.from_pretrained("/Users/thomas/Documents/lbc/robot/lerobot-act/model/leo").to(DEVICE)
 
     onehot_tensor = torch.tensor([1, 0, 0, 0, 0], dtype=torch.float)
 
     # params = ControlParams(onehot=onehot_tensor)
     params = ControlParams()
     robot = make_robot_from_config(robot_cfg)
-    polices = [policy_condi ]
+    polices = [policy_0, policy_1,policy_2 ,policy_3 ,policy_4]
     for i, policy in enumerate(polices):
         print(f"Running policy {i}...")
         run_actions(robot, params, policy)
