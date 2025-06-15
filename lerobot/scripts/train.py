@@ -206,6 +206,8 @@ def train(cfg: TrainPipelineConfig):
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
         for key in batch:
+            if key == "is_task_complete":
+                print(batch[key].shape)
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, non_blocking=True)
 
