@@ -178,6 +178,8 @@ class ACTPolicy(PreTrainedPolicy):
             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
         ).mean()
 
+        print(stop_logits.shape, batch["is_task_complete"].shape)
+
         bce_loss = F.binary_cross_entropy_with_logits(
             stop_logits.squeeze(-1),
             batch["is_task_complete"].float(),
