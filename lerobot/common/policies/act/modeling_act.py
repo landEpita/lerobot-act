@@ -134,69 +134,74 @@ class ACTPolicy(PreTrainedPolicy):
 
     @torch.no_grad
     def select_action(self, batch: dict[str, Tensor]) -> Tensor:
-        """Select a single action given environment observations.
-
-        This method wraps `select_actions` in order to return one action at a time for execution in the
-        environment. It works by managing the actions in a queue and only calling `select_actions` when the
-        queue is empty.
-        """
         self.eval()
 
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+            batch = dict(batch)
             batch["observation.images"] = [batch[key] for key in self.config.image_features]
 
-        # If we are doing temporal ensembling, do online updates where we keep track of the number of actions
-        # we are ensembling over.
         if self.config.temporal_ensemble_coeff is not None:
-            actions = self.model(batch)[0]  # (batch_size, chunk_size, action_dim)
+            actions = self.model(batch)[0][0]
             actions = self.unnormalize_outputs({"action": actions})["action"]
             action = self.temporal_ensembler.update(actions)
             return action
 
-        # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
-        # querying the policy.
         if len(self._action_queue) == 0:
-            actions = self.model(batch)[0][:, : self.config.n_action_steps]
+            (actions_chunk, stop_chunk) = self.model(batch)[0]
+            actions_chunk = actions_chunk[:, : self.config.n_action_steps]
+            stop_chunk = stop_chunk[:, : self.config.n_action_steps]
 
-            # TODO(rcadene): make _forward return output dictionary?
-            actions = self.unnormalize_outputs({"action": actions})["action"]
+            actions_chunk = self.unnormalize_outputs({"action": actions_chunk})["action"]
 
-            # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
-        return self._action_queue.popleft()
+            # Queue stores both actions and stop logits
+            self._action_queue.extend(
+                zip(actions_chunk.transpose(0, 1), stop_chunk.transpose(0, 1))
+            )
+
+        action_step, stop_logit = self._action_queue.popleft()
+        stop_prob = torch.sigmoid(stop_logit)
+        done = (stop_prob.item() > self.config.stop_threshold)
+        return action_step, done
+
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
-        """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+            batch = dict(batch)
             batch["observation.images"] = [batch[key] for key in self.config.image_features]
-
         batch = self.normalize_targets(batch)
-        actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
+
+        (actions_hat, stop_logits), (mu_hat, log_sigma_x2_hat) = self.model(batch)
 
         l1_loss = (
             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
         ).mean()
 
-        loss_dict = {"l1_loss": l1_loss.item()}
+        bce_loss = F.binary_cross_entropy_with_logits(
+            stop_logits.squeeze(-1),
+            batch["is_task_complete"].float(),
+            weight=(~batch["action_is_pad"]).float()
+        )
+
+        λ_stop = self.config.stop_loss_weight
+
+        loss_dict = {
+            "l1_loss": l1_loss.item(),
+            "bce_loss": bce_loss.item(),
+        }
+
         if self.config.use_vae:
-            # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
-            # each dimension independently, we sum over the latent dimension to get the total
-            # KL-divergence per batch element, then take the mean over the batch.
-            # (See App. B of https://arxiv.org/abs/1312.6114 for more details).
             mean_kld = (
                 (-0.5 * (1 + log_sigma_x2_hat - mu_hat.pow(2) - (log_sigma_x2_hat).exp())).sum(-1).mean()
             )
             loss_dict["kld_loss"] = mean_kld.item()
-            loss = l1_loss + mean_kld * self.config.kl_weight
+            loss = l1_loss + λ_stop * bce_loss + mean_kld * self.config.kl_weight
         else:
-            loss = l1_loss
+            loss = l1_loss + λ_stop * bce_loss
 
         return loss, loss_dict
+
 
 
 class ACTTemporalEnsembler:
@@ -536,6 +541,14 @@ class ACT(nn.Module):
             config.dim_model, self.config.action_feature.shape[0]
         )
 
+        # ─ ACT.__init__ ───────────────────────────────────────────────
+        self.stop_head = nn.Sequential(
+            nn.Linear(config.dim_model, config.dim_model // 2),
+            nn.ReLU(),
+            nn.Linear(config.dim_model // 2, 1)          # (B,S,1) logits
+        )
+
+
         self._reset_parameters()
 
 
@@ -710,8 +723,12 @@ class ACT(nn.Module):
         # ==========================================================================
         # 6.  ACTION HEAD
         # ==========================================================================
-        actions = self.action_head(dec_out.transpose(0, 1))  # (B,S,action_dim)
-        return actions, (mu, log_sigma_x2)
+        # ─ ACT.forward (bottom of the function) ──────────────────────
+        actions     = self.action_head(dec_out.transpose(0, 1))  # (B,S,A)
+        stop_logits = self.stop_head(dec_out.transpose(0, 1))    # (B,S,1)
+
+        return (actions, stop_logits), (mu, log_sigma_x2)
+
 
 
 
